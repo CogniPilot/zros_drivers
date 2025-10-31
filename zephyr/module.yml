@@ -1,0 +1,4 @@
+name: zros_drivers
+build:
+  kconfig: Kconfig
+  cmake: .
