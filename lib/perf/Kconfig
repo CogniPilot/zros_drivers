@@ -1,0 +1,6 @@
+config ZROS_PERF
+	bool "Enable ZROS Perf utilities"
+	default y
+	depends on ZROS
+	help
+	  ZROS Perf utilities allow characterizing performance of ZROS nodes.

@@ -4,5 +4,6 @@
 menu "ZROS drivers"
 
 rsource "drivers/Kconfig"
+rsource "lib/Kconfig"
 
 endmenu
