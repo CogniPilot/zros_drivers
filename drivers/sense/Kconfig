@@ -10,6 +10,7 @@ menuconfig ZROS_SENSE
 
 if ZROS_SENSE
 
+rsource "baro/Kconfig"
 rsource "imu/Kconfig"
 
 endif

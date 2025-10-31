@@ -1,0 +1,23 @@
+# Copyright (c) 2023, CogniPilot Foundation
+# Copyright (c) 2025 Croxel Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig ZROS_SENSE_BARO
+  bool "ZROS Baro driver"
+  help
+    This option enables the barometric altimeter driver interface
+
+if ZROS_SENSE_BARO
+
+config ZROS_SENSE_BARO_COUNT
+  int "Number of barometers"
+  default 1
+  range 1 4
+  help
+    Defines number of barometers 1-4
+
+module = ZROS_SENSE_BARO
+module-str = sense_baro
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # ZROS_SENSE_BARO
