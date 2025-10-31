@@ -12,5 +12,6 @@ if ZROS_SENSE
 
 rsource "baro/Kconfig"
 rsource "imu/Kconfig"
+rsource "mag/Kconfig"
 
 endif
