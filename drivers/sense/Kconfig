@@ -1,0 +1,15 @@
+# Copyright (c) 2025 Croxel Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig ZROS_SENSE
+	bool "Enable Common ZROS Sense drivers"
+	default y
+	depends on ZROS
+	help
+	  ZROS Common Sense drivers
+
+if ZROS_SENSE
+
+rsource "imu/Kconfig"
+
+endif

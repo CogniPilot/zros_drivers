@@ -1,0 +1,31 @@
+# Copyright (c) 2023 CogniPilot Foundation
+# Copyright (c) 2025 Croxel Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+config ZROS_SENSE_IMU
+	bool "ZROS IMU driver"
+	default y
+	help
+	  This option enables the ZROS IMU driver interface
+
+if ZROS_SENSE_IMU
+
+config ZROS_SENSE_IMU_ACCEL_COUNT
+  int "Number of accelerometers"
+  default 1
+  range 1 4
+  help
+    Defines number of accelerometers 1-4
+
+config ZROS_SENSE_IMU_GYRO_COUNT
+  int "Number of gyroscopes"
+  default 1
+  range 1 4
+  help
+    Defines number of gyroscopes 1-4
+
+module = ZROS_SENSE_IMU
+module-str = sense_imu
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # ZROS_SENSE_IMU
