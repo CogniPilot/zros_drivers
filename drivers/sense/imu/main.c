@@ -7,6 +7,7 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/shell/shell.h>
 
 #include <zros/perf_duration.h>
 
@@ -19,10 +20,12 @@
 #include <zros/zros_pub.h>
 #include <zros/zros_sub.h>
 
+#define MY_STACK_SIZE 1024
+#define MY_PRIORITY   2
+
 LOG_MODULE_REGISTER(sense_imu, CONFIG_ZROS_SENSE_IMU_LOG_LEVEL);
 
-#define THREAD_STACK_SIZE 1024
-#define THREAD_PRIORITY   6
+static K_THREAD_STACK_DEFINE(g_my_stack_area, MY_STACK_SIZE);
 
 static const double g_accel = 9.8;
 static const int g_calibration_count = 100;
@@ -32,22 +35,22 @@ extern struct k_work_q g_high_priority_work_q;
 static void imu_work_handler(struct k_work *work);
 static void imu_timer_handler(struct k_timer *dummy);
 
-typedef struct context_t {
+struct context {
+	struct zros_node node;
+	struct zros_pub pub_imu;
+	synapse_pb_Imu imu;
+	struct zros_sub sub_status;
+	synapse_pb_Status status;
+	struct k_sem running;
+	size_t stack_size;
+	k_thread_stack_t *stack_area;
+	struct k_thread thread_data;
 	// work
 	struct k_work work_item;
 	struct k_timer timer;
-	// node
-	struct zros_node node;
 	// data
-	synapse_pb_Imu imu;
-	synapse_pb_Status status;
 	synapse_pb_Status_Mode last_mode;
 	bool calibrated;
-	// publications
-	struct zros_pub pub_imu;
-	// subscriptions
-	struct zros_sub sub_status;
-	// gyro
 	const struct device *gyro_dev;
 	double gyro_raw[3];
 	double gyro_bias[3];
@@ -57,14 +60,11 @@ typedef struct context_t {
 	double accel_raw[3];
 	double accel_bias[3];
 	double accel_scale;
+};
 
-	// 2nd order butterworth filter states
-} context_t;
-
-static context_t g_ctx = {
-	.work_item = Z_WORK_INITIALIZER(imu_work_handler),
-	.timer = Z_TIMER_INITIALIZER(g_ctx.timer, imu_timer_handler, NULL),
+static struct context g_ctx = {
 	.node = {},
+	.pub_imu = {},
 	.imu =
 		{
 			.has_stamp = true,
@@ -75,11 +75,16 @@ static context_t g_ctx = {
 			.linear_acceleration = synapse_pb_Vector3_init_default,
 			.has_orientation = false,
 		},
+	.sub_status = {},
 	.status = synapse_pb_Status_init_default,
+	.running = Z_SEM_INITIALIZER(g_ctx.running, 1, 1),
+	.stack_size = MY_STACK_SIZE,
+	.stack_area = g_my_stack_area,
+	.thread_data = {},
+	.work_item = Z_WORK_INITIALIZER(imu_work_handler),
+	.timer = Z_TIMER_INITIALIZER(g_ctx.timer, imu_timer_handler, NULL),
 	.last_mode = synapse_pb_Status_Mode_MODE_UNKNOWN,
 	.calibrated = false,
-	.pub_imu = {},
-	.sub_status = {},
 	.gyro_dev = NULL,
 	.gyro_raw = {},
 	.gyro_bias = {},
@@ -104,7 +109,7 @@ static inline const struct device *get_device(const struct device *const dev)
 	return dev;
 }
 
-static void imu_init(context_t *ctx)
+static void sense_imu_init(struct context *ctx)
 {
 	LOG_INF("init");
 
@@ -118,9 +123,47 @@ static void imu_init(context_t *ctx)
 
 	// setup gyro devices
 	ctx->gyro_dev = get_device(DEVICE_DT_GET(DT_ALIAS(gyro0)));
+
+	k_timer_start(&ctx->timer, K_MSEC(1000), K_MSEC(5));
+
+	k_sem_take(&ctx->running, K_FOREVER);
+	LOG_INF("init");
 }
 
-void imu_read(context_t *ctx)
+static void sense_imu_fini(struct context *ctx)
+{
+	zros_sub_fini(&ctx->sub_status);
+	zros_pub_fini(&ctx->pub_imu);
+	zros_node_fini(&ctx->node);
+	k_sem_give(&ctx->running);
+	LOG_INF("fini");
+}
+
+static void sense_imu_run(void *p0, void *p1, void *p2)
+{
+	struct context *ctx = p0;
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+
+	sense_imu_init(ctx);
+
+	// wait for stop request
+	while (k_sem_take(&ctx->running, K_MSEC(1000)) < 0)
+		;
+
+	sense_imu_fini(ctx);
+}
+
+static int start(struct context *ctx)
+{
+	k_tid_t tid = k_thread_create(&ctx->thread_data, ctx->stack_area, ctx->stack_size,
+				      sense_imu_run, ctx, NULL, NULL, MY_PRIORITY, 0, K_FOREVER);
+	k_thread_name_set(tid, "sense_imu");
+	k_thread_start(tid);
+	return 0;
+}
+
+void imu_read(struct context *ctx)
 {
 	// default all data to zero
 	struct sensor_value accel_value[3] = {};
@@ -158,7 +201,7 @@ void imu_read(context_t *ctx)
 	}
 }
 
-void imu_calibrate(context_t *ctx)
+void imu_calibrate(struct context *ctx)
 {
 	// data
 	double accel_samples[g_calibration_count][3];
@@ -284,7 +327,7 @@ void imu_calibrate(context_t *ctx)
 	ctx->calibrated = true;
 }
 
-void imu_publish(context_t *ctx)
+void imu_publish(struct context *ctx)
 {
 	// update message
 	stamp_msg(&ctx->imu.stamp, k_uptime_ticks());
@@ -300,12 +343,11 @@ void imu_publish(context_t *ctx)
 
 	// publish message
 	zros_pub_update(&ctx->pub_imu);
-	// LOG_INF("publish imu");
 }
 
 void imu_work_handler(struct k_work *work)
 {
-	context_t *ctx = CONTAINER_OF(work, context_t, work_item);
+	struct context *ctx = CONTAINER_OF(work, struct context, work_item);
 
 	// update status
 	if (zros_sub_update_available(&ctx->sub_status)) {
@@ -332,20 +374,43 @@ void imu_work_handler(struct k_work *work)
 
 void imu_timer_handler(struct k_timer *timer)
 {
-	context_t *ctx = CONTAINER_OF(timer, context_t, timer);
+	struct context *ctx = CONTAINER_OF(timer, struct context, timer);
 	k_work_submit_to_queue(&g_high_priority_work_q, &ctx->work_item);
 }
 
-int sense_imu_entry_point(context_t *ctx)
+static int sense_imu_cmd_handler(const struct shell *sh, size_t argc, char **argv, void *data)
 {
-	imu_init(ctx);
-	// delay initiali calibration 1 s
-	k_msleep(1000);
-	k_timer_start(&ctx->timer, K_MSEC(5), K_MSEC(5));
+	ARG_UNUSED(argc);
+	struct context *ctx = data;
+
+	if (strcmp(argv[0], "start") == 0) {
+		if (k_sem_count_get(&g_ctx.running) == 0) {
+			shell_print(sh, "already running");
+		} else {
+			start(ctx);
+		}
+	} else if (strcmp(argv[0], "stop") == 0) {
+		if (k_sem_count_get(&g_ctx.running) == 0) {
+			k_sem_give(&g_ctx.running);
+		} else {
+			shell_print(sh, "not running");
+		}
+	} else if (strcmp(argv[0], "status") == 0) {
+		shell_print(sh, "running: %d", (int)k_sem_count_get(&g_ctx.running) == 0);
+	}
 	return 0;
 }
 
-K_THREAD_DEFINE(sense_imu, THREAD_STACK_SIZE, sense_imu_entry_point, &g_ctx, NULL, NULL,
-		THREAD_PRIORITY, 0, 100);
+SHELL_SUBCMD_DICT_SET_CREATE(sub_sense_imu, sense_imu_cmd_handler, (start, &g_ctx, "start"),
+			     (stop, &g_ctx, "stop"), (status, &g_ctx, "status"));
+
+SHELL_CMD_REGISTER(sense_imu, &sub_sense_imu, "sense imu args", NULL);
+
+static int sense_imu_sys_init(void)
+{
+	return start(&g_ctx);
+};
+
+SYS_INIT(sense_imu_sys_init, APPLICATION, 2);
 
 // vi: ts=4 sw=4 et
