@@ -11,6 +11,7 @@ menuconfig ZROS_SENSE
 if ZROS_SENSE
 
 rsource "baro/Kconfig"
+rsource "gnss/Kconfig"
 rsource "imu/Kconfig"
 rsource "mag/Kconfig"
 

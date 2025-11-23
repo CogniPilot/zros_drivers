@@ -1,0 +1,16 @@
+# Copyright (c) 2025 Croxel Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+config ZROS_SENSE_GNSS
+	bool "ZROS Sense GNSS driver"
+	select GNSS
+	help
+	  This option enables the GNSS ZROS driver
+
+if ZROS_SENSE_GNSS
+
+module = ZROS_SENSE_GNSS
+module-str = sense_gnss
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # ZROS_SENSE_GNSS
