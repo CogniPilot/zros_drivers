@@ -1,0 +1,13 @@
+# Copyright (c) 2025 Croxel Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig ZROS_SENSE_STREAM
+	bool "Enable ZROS Sense Stream drivers"
+	help
+	  ZROS Sense Stream drivers
+
+if ZROS_SENSE_STREAM
+
+rsource "imu/Kconfig"
+
+endif
