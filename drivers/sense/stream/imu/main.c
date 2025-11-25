@@ -24,10 +24,6 @@
 
 LOG_MODULE_REGISTER(sense_imu_stream, CONFIG_ZROS_SENSE_STREAM_IMU_LOG_LEVEL);
 
-RTIO_DEFINE_WITH_MEMPOOL(imu0_stream_ctx, 2, 4, 128, 4, sizeof(void *));
-SENSOR_DT_STREAM_IODEV(imu0_stream_iodev, DT_ALIAS(imu_stream_0),
-		       {SENSOR_TRIG_FIFO_WATERMARK, SENSOR_STREAM_DATA_INCLUDE});
-
 /** Borrowed from zephyr/dsp/util.h as it was erroring out due to a missing
  * zdsp backend. Should sort that out.
  */
@@ -36,6 +32,10 @@ SENSOR_DT_STREAM_IODEV(imu0_stream_iodev, DT_ALIAS(imu_stream_0),
 #define ACCEL_G ((double)SENSOR_G / 1000000)
 
 #define IMU_STREAM_CALIBRATION_COUNT 100
+
+#define IMU_ALIAS(i) DT_ALIAS(_CONCAT(imu_stream_,i))
+
+static struct context *get_context_from_iodev(const struct rtio_iodev *iodev);
 
 enum sense_imu_stream_calibration_st {
 	SENSE_IMU_STREAM_UNCALIBRATED,
@@ -49,8 +49,10 @@ enum sense_imu_stream_status {
 };
 
 struct context {
+	const char *name;
 	struct zros_node node;
 	struct zros_pub pub_imu;
+	struct zros_topic *pub_topic;
 	synapse_pb_Imu imu;
 	struct zros_sub sub_status;
 	synapse_pb_Status status;
@@ -77,30 +79,6 @@ struct context {
 		struct rtio *ctx;
 		struct rtio_iodev *iodev;
 	} stream;
-};
-
-static struct context imu_stream_context_0 = {
-	.node = {},
-	.pub_imu = {},
-	.imu = {
-		.has_stamp = true,
-		.stamp = synapse_pb_Timestamp_init_default,
-		.has_angular_velocity = true,
-		.angular_velocity = synapse_pb_Vector3_init_default,
-		.has_linear_acceleration = true,
-		.linear_acceleration = synapse_pb_Vector3_init_default,
-		.has_orientation = false,
-	},
-	.sub_status = {},
-	.status = synapse_pb_Status_init_default,
-	.running = false,
-	.calibration = {
-		.state = SENSE_IMU_STREAM_UNCALIBRATED,
-	},
-	.stream = {
-		.ctx = &imu0_stream_ctx,
-		.iodev = &imu0_stream_iodev,
-	},
 };
 
 static inline void avg_3_axis_q31(const struct sensor_three_axis_data *data, size_t count,
@@ -195,37 +173,43 @@ static void feed_calibration(struct context *ctx,
 				      accel_mean[2] * accel_mean[2]);
 
 	if (accel_magnitude < 8.0 || accel_magnitude > 11.0) {
-		LOG_WRN("accel magnitude out of range: %10.4f (expected ~9.8)",
-			accel_magnitude);
+		LOG_WRN("%s: accel magnitude out of range: %10.4f (expected ~9.8)",
+			ctx->name, accel_magnitude);
 		calibration_ok = false;
 	}
 
 	for (size_t i = 0 ; i < ARRAY_SIZE(gyro_std) ; i++) {
 		if (gyro_std[i] > 0.1) {
-			LOG_WRN("gyro axis %d too noisy: std=%10.4f", i, gyro_std[i]);
+			LOG_WRN("%s: gyro axis %d too noisy: std=%10.4f", ctx->name,
+				i, gyro_std[i]);
 			calibration_ok = false;
 		}
 	}
 
 	if (!calibration_ok) {
-		LOG_WRN("Calibration failed. Retrying...");
+		LOG_WRN("%s: Calibration failed. Retrying...", ctx->name);
 		ctx->calibration.state = SENSE_IMU_STREAM_UNCALIBRATED;
 		return;
 	}
 
-	LOG_INF("Calibration completed");
+	LOG_INF("%s: Calibration completed", ctx->name);
 	ctx->calibration.bias.accel[0] = accel_mean[0];
 	ctx->calibration.bias.accel[1] = accel_mean[1];
 	ctx->calibration.bias.accel[2] = 0;
 	ctx->calibration.accel_scale = accel_magnitude / ACCEL_G;
-	LOG_INF("accel");
-	LOG_INF("mean: %10.4f %10.4f %10.4f", accel_mean[0], accel_mean[1], accel_mean[2]);
-	LOG_INF("std: %10.4f %10.4f %10.4f", accel_std[0], accel_std[1], accel_std[2]);
-	LOG_INF("scale %10.4f", ctx->calibration.accel_scale);
+	LOG_INF("%s: accel", ctx->name);
+	LOG_INF("%s: mean: %10.4f %10.4f %10.4f", ctx->name,
+		accel_mean[0], accel_mean[1], accel_mean[2]);
+	LOG_INF("%s: std: %10.4f %10.4f %10.4f", ctx->name,
+		accel_std[0], accel_std[1], accel_std[2]);
+	LOG_INF("%s: scale %10.4f", ctx->name, ctx->calibration.accel_scale);
 
-	LOG_INF("gyro");
-	LOG_INF("mean: %10.4f %10.4f %10.4f", gyro_mean[0], gyro_mean[1], gyro_mean[2]);
-	LOG_INF("std: %10.4f %10.4f %10.4f", gyro_std[0], gyro_std[1], gyro_std[2]);
+	LOG_INF("%s gyro", ctx->name);
+	LOG_INF("%s mean: %10.4f %10.4f %10.4f", ctx->name,
+		gyro_mean[0], gyro_mean[1], gyro_mean[2]);
+	LOG_INF("%s: std: %10.4f %10.4f %10.4f", ctx->name,
+		gyro_std[0], gyro_std[1], gyro_std[2]);
+
 	for (int i = 0; i < ARRAY_SIZE(gyro_mean); i++) {
 		ctx->calibration.bias.gyro[i] = gyro_mean[i];
 	}
@@ -303,28 +287,28 @@ static inline bool calibration_requested(struct context *ctx)
 
 static void process_events(int result, uint8_t *buf, uint32_t len, void *userdata)
 {
-	struct context *ctx = &imu_stream_context_0;
 	struct rtio_iodev *iodev = (struct rtio_iodev *)userdata;
+	struct context *ctx = get_context_from_iodev(iodev);
 	struct sensor_three_axis_data accel_avg_data;
 	struct sensor_three_axis_data gyro_avg_data;
 	int ret;
 
 	if (result < 0) {
-		LOG_ERR("Failed event: %d", result);
+		LOG_ERR("%s: Failed event: %d", ctx->name, result);
 		ctx->running = false;
 		return;
 	}
 
 	ret = decode_data(iodev, buf, SENSOR_CHAN_ACCEL_XYZ, &accel_avg_data);
 	if (ret < 0) {
-		LOG_ERR("Failed to decode accel: %d", ret);
+		LOG_ERR("%s: Failed to decode accel: %d", ctx->name, ret);
 		ctx->running = false;
 		return;
 	}
 
 	ret = decode_data(iodev, buf, SENSOR_CHAN_GYRO_XYZ, &gyro_avg_data);
 	if (ret < 0) {
-		LOG_ERR("Failed to decode gyro: %d", ret);
+		LOG_ERR("%s: Failed to decode gyro: %d", ctx->name, ret);
 		ctx->running = false;
 		return;
 	}
@@ -384,8 +368,8 @@ static void imu_stream_thread(void *arg0)
 	int err;
 
 	LOG_INF("init");
-	zros_node_init(&ctx->node, "sense_stream_imu");
-	zros_pub_init(&ctx->pub_imu, &ctx->node, &topic_imu, &ctx->imu);
+	zros_node_init(&ctx->node, ctx->name);
+	zros_pub_init(&ctx->pub_imu, &ctx->node, ctx->pub_topic, &ctx->imu);
 	zros_sub_init(&ctx->sub_status, &ctx->node, &topic_status, &ctx->status, 1);
 
 	err = setup_stream(ctx);
@@ -405,5 +389,63 @@ static void imu_stream_thread(void *arg0)
 	}
 }
 
-K_THREAD_DEFINE(imu_stream_thread_0_id, 1024, imu_stream_thread,
-		&imu_stream_context_0, NULL, NULL, 2, 0, 0);
+#define IMU_STREAM_DEFINE(i)									   \
+												   \
+RTIO_DEFINE_WITH_MEMPOOL(imu_stream_ctx_##i, 2, 4, 128, 4, sizeof(void *));			   \
+SENSOR_DT_STREAM_IODEV(imu_stream_iodev_##i, IMU_ALIAS(i),					   \
+		       {SENSOR_TRIG_FIFO_WATERMARK, SENSOR_STREAM_DATA_INCLUDE});		   \
+												   \
+static struct context imu_stream_context_##i = {						   \
+	.name = STRINGIFY(sense_imu_##i),							   \
+	.node = {},										   \
+	.pub_imu = {},										   \
+	.pub_topic = &topic_imu##i,								   \
+	.imu = {										   \
+		.has_stamp = true,								   \
+		.stamp = synapse_pb_Timestamp_init_default,					   \
+		.has_angular_velocity = true,							   \
+		.angular_velocity = synapse_pb_Vector3_init_default,				   \
+		.has_linear_acceleration = true,						   \
+		.linear_acceleration = synapse_pb_Vector3_init_default,				   \
+		.has_orientation = false,							   \
+	},											   \
+	.sub_status = {},									   \
+	.status = synapse_pb_Status_init_default,						   \
+	.running = false,									   \
+	.calibration = {									   \
+		.state = SENSE_IMU_STREAM_UNCALIBRATED,						   \
+	},											   \
+	.stream = {										   \
+		.ctx = &imu_stream_ctx_##i,							   \
+		.iodev = &imu_stream_iodev_##i,							   \
+	},											   \
+};												   \
+												   \
+K_THREAD_DEFINE(imu_stream_thread_##i##_id, 1024, imu_stream_thread,				   \
+		&imu_stream_context_##i, NULL, NULL, 2, 0, 0)
+
+#define IMU_STREAM_DEFINE_IF_EXISTS(i)								   \
+	IF_ENABLED(DT_NODE_EXISTS(IMU_ALIAS(i)), (IMU_STREAM_DEFINE(i)))
+
+IMU_STREAM_DEFINE_IF_EXISTS(0);
+IMU_STREAM_DEFINE_IF_EXISTS(1);
+IMU_STREAM_DEFINE_IF_EXISTS(2);
+
+#define IMU_STREAM_CTX_LIST									   \
+		IF_ENABLED(DT_NODE_EXISTS(IMU_ALIAS(0)), (&imu_stream_context_0,))		   \
+		IF_ENABLED(DT_NODE_EXISTS(IMU_ALIAS(1)), (&imu_stream_context_1,))		   \
+		IF_ENABLED(DT_NODE_EXISTS(IMU_ALIAS(2)), (&imu_stream_context_2,))
+
+struct context * const imu_list[] = {
+		IMU_STREAM_CTX_LIST
+};
+
+static struct context *get_context_from_iodev(const struct rtio_iodev *iodev)
+{
+	for (size_t i = 0 ; i < ARRAY_SIZE(imu_list) ; i++) {
+		if (imu_list[i] != NULL && imu_list[i]->stream.iodev == iodev) {
+			return imu_list[i];
+		}
+	}
+	CODE_UNREACHABLE;
+}
