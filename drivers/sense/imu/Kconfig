@@ -4,7 +4,6 @@
 
 config ZROS_SENSE_IMU
 	bool "ZROS IMU driver"
-	default y
 	help
 	  This option enables the ZROS IMU driver interface
 
