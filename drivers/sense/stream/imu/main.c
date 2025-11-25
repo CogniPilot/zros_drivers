@@ -376,8 +376,10 @@ static void imu_stream_thread(void *arg0)
 	__ASSERT(!err, "Failed to start stream for %p", ctx->stream.iodev);
 
 	while (true) {
-		sensor_processing_with_callback(ctx->stream.ctx, process_events);
-		if (!ctx->running) {
+		err = sensor_processing_cb_with_timeout(ctx->stream.ctx, process_events,
+							K_MSEC(100));
+		if (err != 0 || !ctx->running) {
+			ctx->running = false;
 			LOG_ERR("Error during stream. Attempting recovery...");
 			rtio_sqe_drop_all(ctx->stream.ctx);
 			do {
