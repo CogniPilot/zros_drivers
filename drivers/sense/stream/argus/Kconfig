@@ -1,0 +1,34 @@
+# Copyright (c) 2023 CogniPilot Foundation
+# Copyright (c) 2025 Croxel Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+config ZROS_SENSE_STREAM_ARGUS
+	bool "ZROS Argus Stream driver"
+	select SENSOR
+	select SENSOR_ASYNC_API
+	select RTIO
+	help
+	  This option enables the ZROS Argus Stream driver interface
+
+if ZROS_SENSE_STREAM_ARGUS
+
+choice ZROS_SENSE_STREAM_ARGUS_DATA
+	prompt "Argus Data Mode"
+	default ZROS_SENSE_STREAM_ARGUS_DISTANCE
+
+config ZROS_SENSE_STREAM_ARGUS_DISTANCE
+	bool "Enable Basic Argus data (1D)"
+
+config ZROS_SENSE_STREAM_ARGUS_POINTCLOUD
+	bool "Enable PointCloud Argus data (3D)"
+
+config ZROS_SENSE_STREAM_ARGUS_VERBOSE
+	bool "Enable verbose Argus data (All)"
+
+endchoice
+
+module = ZROS_SENSE_STREAM_ARGUS
+module-str = sense_stream_argus
+source "subsys/logging/Kconfig.template.log_config"
+
+endif
