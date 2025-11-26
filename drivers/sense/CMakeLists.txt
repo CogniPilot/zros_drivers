@@ -5,3 +5,5 @@ add_subdirectory_ifdef(CONFIG_ZROS_SENSE_BARO baro)
 add_subdirectory_ifdef(CONFIG_ZROS_SENSE_GNSS gnss)
 add_subdirectory_ifdef(CONFIG_ZROS_SENSE_IMU imu)
 add_subdirectory_ifdef(CONFIG_ZROS_SENSE_MAG mag)
+
+add_subdirectory_ifdef(CONFIG_ZROS_SENSE_STREAM stream)
