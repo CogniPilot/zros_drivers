@@ -1,0 +1,19 @@
+# Copyright (c) 2023 CogniPilot Foundation
+# Copyright (c) 2025 Croxel Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+config ZROS_SENSE_STREAM_MAG
+	bool "ZROS MAG Stream driver"
+	select SENSOR
+	select SENSOR_ASYNC_API
+	select RTIO
+	help
+	  This option enables the ZROS MAG Stream driver interface
+
+if ZROS_SENSE_STREAM_MAG
+
+module = ZROS_SENSE_STREAM_MAG
+module-str = sense_stream_mag
+source "subsys/logging/Kconfig.template.log_config"
+
+endif
