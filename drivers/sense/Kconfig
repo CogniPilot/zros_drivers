@@ -15,4 +15,6 @@ rsource "gnss/Kconfig"
 rsource "imu/Kconfig"
 rsource "mag/Kconfig"
 
+rsource "stream/Kconfig"
+
 endif
