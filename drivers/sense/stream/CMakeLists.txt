@@ -4,3 +4,4 @@
 add_subdirectory_ifdef(CONFIG_ZROS_SENSE_STREAM_DISTANCE distance)
 add_subdirectory_ifdef(CONFIG_ZROS_SENSE_STREAM_IMU imu)
 add_subdirectory_ifdef(CONFIG_ZROS_SENSE_STREAM_MAG mag)
+add_subdirectory_ifdef(CONFIG_ZROS_SENSE_STREAM_OPTICAL_FLOW optical_flow)
