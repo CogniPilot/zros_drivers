@@ -10,5 +10,6 @@ if ZROS_SENSE_STREAM
 
 rsource "imu/Kconfig"
 rsource "mag/Kconfig"
+rsource "optical_flow/Kconfig"
 
 endif
