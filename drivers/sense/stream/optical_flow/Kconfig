@@ -1,0 +1,19 @@
+# Copyright (c) 2023 CogniPilot Foundation
+# Copyright (c) 2025 Croxel Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+config ZROS_SENSE_STREAM_OPTICAL_FLOW
+	bool "ZROS IMU Stream driver"
+	select SENSOR
+	select SENSOR_ASYNC_API
+	select RTIO
+	help
+	  This option enables the ZROS Optical Flow Stream driver interface
+
+if ZROS_SENSE_STREAM_OPTICAL_FLOW
+
+module = ZROS_SENSE_STREAM_OPTICAL_FLOW
+module-str = sense_stream_optical_flow
+source "subsys/logging/Kconfig.template.log_config"
+
+endif

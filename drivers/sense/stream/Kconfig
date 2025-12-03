@@ -8,6 +8,9 @@ menuconfig ZROS_SENSE_STREAM
 
 if ZROS_SENSE_STREAM
 
+rsource "distance/Kconfig"
 rsource "imu/Kconfig"
+rsource "mag/Kconfig"
+rsource "optical_flow/Kconfig"
 
 endif
