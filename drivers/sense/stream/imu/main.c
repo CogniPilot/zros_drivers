@@ -230,6 +230,18 @@ static inline const struct sensor_decoder_api *get_imu_decoder(struct rtio_iodev
 	return decoder;
 }
 
+static inline const struct sensor_three_axis_ref *get_axis_ref(struct rtio_iodev *iodev)
+{
+	struct sensor_read_config *read_config = (struct sensor_read_config *)iodev->data;
+	const struct device *sensor = read_config->sensor;
+	const struct sensor_three_axis_ref *axis_ref;
+
+	if (sensor_three_axis_ref_get(sensor, &axis_ref) < 0) {
+		return NULL;
+	}
+	return axis_ref;
+}
+
 static int decode_data(struct rtio_iodev *iodev, uint8_t *buf, enum sensor_channel ch,
 		       struct sensor_three_axis_data *out)
 {
@@ -242,6 +254,7 @@ static int decode_data(struct rtio_iodev *iodev, uint8_t *buf, enum sensor_chann
 	int ret;
 
 	const struct sensor_decoder_api *decoder = get_imu_decoder(iodev);
+	const struct sensor_three_axis_ref *axis_ref = get_axis_ref(iodev);
 
 	if (!decoder) {
 		return -EIO;
@@ -255,6 +268,9 @@ static int decode_data(struct rtio_iodev *iodev, uint8_t *buf, enum sensor_chann
 		return ret;
 	}
 	avg_3_axis_q31(dec_data, ret, out);
+	if (axis_ref) {
+		sensor_three_axis_ref_align(axis_ref, out);
+	}
 
 	return 0;
 }
