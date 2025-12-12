@@ -6,6 +6,7 @@ config ZROS_SENSE_STREAM_MAG
 	bool "ZROS MAG Stream driver"
 	select SENSOR
 	select SENSOR_ASYNC_API
+	select SENSOR_THREE_AXIS_REF
 	select RTIO
 	help
 	  This option enables the ZROS MAG Stream driver interface
