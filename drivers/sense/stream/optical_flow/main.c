@@ -61,14 +61,27 @@ static inline const struct sensor_decoder_api *get_decoder(struct rtio_iodev *io
 	return decoder;
 }
 
-static void optical_flow_publish(struct context *ctx, struct paa3905_encoded_data *edata)
+static inline const struct sensor_three_axis_ref *get_axis_ref(struct rtio_iodev *iodev)
+{
+	struct sensor_read_config *read_config = (struct sensor_read_config *)iodev->data;
+	const struct device *sensor = read_config->sensor;
+	const struct sensor_three_axis_ref *axis_ref;
+
+	if (sensor_three_axis_ref_get(sensor, &axis_ref) < 0) {
+		return NULL;
+	}
+	return axis_ref;
+}
+
+static void optical_flow_publish(struct context *ctx, struct paa3905_encoded_data *edata,
+				 struct sensor_three_axis_data *data)
 {
 	stamp_msg(&ctx->data.stamp, k_uptime_ticks());
 	ctx->data.motion = edata->motion > 0;
 	ctx->data.mode = REG_OBSERVATION_MODE(edata->observation);
-	ctx->data.delta_x = edata->delta.x;
-	ctx->data.delta_y = edata->delta.y;
-	ctx->data.delta_z = 0;
+	ctx->data.delta_x = data->readings[0].x;
+	ctx->data.delta_y = data->readings[0].y;
+	ctx->data.delta_z = data->readings[0].z;
 	ctx->data.challenge_condition = edata->challenging_conditions;
 	ctx->data.squal = edata->squal;
 	ctx->data.shutter = edata->shutter;
@@ -80,14 +93,25 @@ static void process_events(int result, uint8_t *buf, uint32_t len, void *userdat
 	struct rtio_iodev *iodev = (struct rtio_iodev *)userdata;
 	struct context *ctx = get_context_from_iodev(iodev);
 	struct paa3905_encoded_data *edata = (struct paa3905_encoded_data *)buf;
+	struct sensor_three_axis_data data = {
+		.header.reading_count = 1,
+		.shift = 31,
+		.readings[0].x = edata->delta.x,
+		.readings[0].y = edata->delta.y,
+		.readings[0].z = 0,
+	};
+	const struct sensor_three_axis_ref *axis_ref = get_axis_ref(iodev);
 
 	if (result < 0) {
 		LOG_ERR("%s: Failed event: %d", ctx->name, result);
 		ctx->running = false;
 		return;
 	}
-
-	optical_flow_publish(ctx, edata);
+	
+	if (axis_ref) {
+		sensor_three_axis_ref_align(axis_ref, &data);
+	}
+	optical_flow_publish(ctx, edata, &data);
 }
 
 static int setup_stream(struct context *ctx)
