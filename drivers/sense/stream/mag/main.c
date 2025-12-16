@@ -195,15 +195,15 @@ static void mag_stream_thread(void *arg0)
 
 	while (true) {
 		err = sensor_processing_cb_with_timeout(ctx->stream.ctx, process_events,
-							K_MSEC(100));
+							K_MSEC(1000));
 		if (err != 0 || !ctx->running) {
 			ctx->running = false;
 			LOG_ERR("Error during stream. Attempting recovery...");
 			rtio_sqe_drop_all(ctx->stream.ctx);
 			do {
 				/* TODO: Decide when we've tried too much. */
+				k_sleep(K_MSEC(1000));
 				(void)setup_stream(ctx);
-				k_sleep(K_MSEC(1));		
 			} while (!ctx->running);
 		}
 	}
