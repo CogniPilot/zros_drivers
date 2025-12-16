@@ -237,7 +237,7 @@ static struct context mag_stream_context_##i = {						   \
 };												   \
 												   \
 K_THREAD_DEFINE(mag_stream_thread_##i##_id, 1024, mag_stream_thread,				   \
-		&mag_stream_context_##i, NULL, NULL, 2, 0, 0)
+		&mag_stream_context_##i, NULL, NULL, 4, 0, 0)
 
 #define MAG_STREAM_DEFINE_IF_EXISTS(i)								   \
 	IF_ENABLED(DT_NODE_EXISTS(MAG_ALIAS(i)), (MAG_STREAM_DEFINE(i)))

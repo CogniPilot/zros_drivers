@@ -183,7 +183,7 @@ static struct context flow_stream_context_##i = {						   \
 };												   \
 												   \
 K_THREAD_DEFINE(flow_stream_thread_##i##_id, 1024, optical_flow_stream_thread,			   \
-		&flow_stream_context_##i, NULL, NULL, 2, 0, 0)
+		&flow_stream_context_##i, NULL, NULL, 4, 0, 0)
 
 #define FLOW_STREAM_DEFINE_IF_EXISTS(i)								   \
 	IF_ENABLED(DT_NODE_EXISTS(OPTICAL_FLOW_ALIAS(i)), (FLOW_STREAM_DEFINE(i)))
