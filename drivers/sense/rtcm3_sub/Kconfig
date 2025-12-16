@@ -1,0 +1,17 @@
+# Copyright (c) 2025 Croxel Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+config ZROS_SENSE_RTCM3_SUB
+	bool "ZROS Sense RTCM3 Subscriber driver"
+	select GNSS
+	select GNSS_RTK
+	help
+	  This option enables the RTCM3 Subscriber ZROS driver
+
+if ZROS_SENSE_RTCM3_SUB
+
+module = ZROS_SENSE_RTCM3_SUB
+module-str = sense_rtcm3_sub
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # ZROS_SENSE_RTCM3_SUB
