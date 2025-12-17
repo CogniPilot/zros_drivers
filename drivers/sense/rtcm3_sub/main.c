@@ -15,7 +15,7 @@
 #include <synapse_topic_list.h>
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(sense_gnss, CONFIG_ZROS_SENSE_RTCM3_SUB_LOG_LEVEL);
+LOG_MODULE_REGISTER(sense_rtcm_sub, CONFIG_ZROS_SENSE_RTCM3_SUB_LOG_LEVEL);
 
 typedef struct context {
 	const char *name;
