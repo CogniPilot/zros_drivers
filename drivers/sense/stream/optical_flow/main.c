@@ -125,6 +125,7 @@ static int setup_stream(struct context *ctx)
 	err = sensor_stream(iodev, rtio_ctx, (void *)iodev, NULL);
 	if (err != 0) {
 		LOG_ERR("Failed to start sensor-stream: %d, %p...", err, iodev);
+		rtio_sqe_reset_all(ctx->stream.ctx);
 		return err;
 	}
 	ctx->running = true;
@@ -150,7 +151,6 @@ static void optical_flow_stream_thread(void *arg0)
 		if (err != 0 || !ctx->running) {
 			ctx->running = false;
 			LOG_ERR("Error during stream. Attempting recovery...");
-			rtio_sqe_drop_all(ctx->stream.ctx);
 			do {
 				/* TODO: Decide when we've tried too much. */
 				(void)setup_stream(ctx);
