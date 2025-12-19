@@ -4,6 +4,7 @@
 menuconfig ZROS_SENSE_MAG
   bool "ZROS MAG driver"
   depends on ZROS
+  select SENSOR_THREE_AXIS_REF
   help
     This option enables the MAG driver interface
 

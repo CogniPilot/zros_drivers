@@ -43,6 +43,16 @@ static context_t g_ctx = {.work_item = Z_WORK_INITIALIZER(mag_work_handler),
 				  .magnetic_field_covariance_count = 0,
 			  }};
 
+static inline const struct sensor_three_axis_ref *get_axis_ref(const struct device *dev)
+{
+	const struct sensor_three_axis_ref *axis_ref;
+
+	if (sensor_three_axis_ref_get(dev, &axis_ref) < 0) {
+		return NULL;
+	}
+	return axis_ref;
+}
+
 void mag_work_handler(struct k_work *work)
 {
 	context_t *ctx = CONTAINER_OF(work, context_t, work_item);
@@ -50,6 +60,7 @@ void mag_work_handler(struct k_work *work)
 	for (int i = 0; i < CONFIG_ZROS_SENSE_MAG_COUNT; i++) {
 		// default all data to zero
 		struct sensor_value mag_value[3] = {};
+		const struct sensor_three_axis_ref *axis_ref = get_axis_ref(ctx->device[i]);
 
 		// get accel if device present
 		if (ctx->device[i] != NULL) {
@@ -61,7 +72,10 @@ void mag_work_handler(struct k_work *work)
 		}
 
 		for (int j = 0; j < 3; j++) {
-			mag_data_array[i][j] = mag_value[j].val1 + mag_value[j].val2 * 1e-6;
+			mag_data_array[i][j] = sensor_value_to_double(&mag_value[j]);
+		}
+		if (axis_ref) {
+			sensor_three_axis_ref_align_fp(axis_ref, &mag_data_array[i][0]);
 		}
 	}
 
