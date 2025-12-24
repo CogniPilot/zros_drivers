@@ -407,11 +407,17 @@ static void imu_stream_thread(void *arg0)
 	}
 }
 
+#if IS_ENABLED(CONFIG_ZROS_SENSE_STREAM_IMU_DRDY_MODE)
+#define IMU_STREAM_TRIGGER SENSOR_TRIG_DATA_READY
+#else
+#define IMU_STREAM_TRIGGER SENSOR_TRIG_FIFO_WATERMARK
+#endif
+
 #define IMU_STREAM_DEFINE(i)									   \
 												   \
 RTIO_DEFINE_WITH_MEMPOOL(imu_stream_ctx_##i, 2, 4, 128, 4, sizeof(void *));			   \
 SENSOR_DT_STREAM_IODEV(imu_stream_iodev_##i, IMU_ALIAS(i),					   \
-		       {SENSOR_TRIG_FIFO_WATERMARK, SENSOR_STREAM_DATA_INCLUDE});		   \
+		       {IMU_STREAM_TRIGGER, SENSOR_STREAM_DATA_INCLUDE});		   \
 												   \
 static struct context imu_stream_context_##i = {						   \
 	.name = STRINGIFY(sense_imu_##i),							   \

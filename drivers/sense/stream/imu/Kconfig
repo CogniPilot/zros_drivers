@@ -13,6 +13,18 @@ config ZROS_SENSE_STREAM_IMU
 
 if ZROS_SENSE_STREAM_IMU
 
+config ZROS_SENSE_STREAM_IMU_DRDY_MODE
+	bool "Use DRDY trigger instead of FIFO watermark"
+	default n
+	help
+	  When enabled, the IMU stream driver uses SENSOR_TRIG_DATA_READY
+	  instead of SENSOR_TRIG_FIFO_WATERMARK. This provides lower latency
+	  by reading samples directly from the sensor data registers on each
+	  data-ready interrupt, bypassing the FIFO.
+
+	  Note: The sensor driver must support DRDY-based streaming for this
+	  to work (e.g., ICM4268X with interrupt1-drdy enabled in devicetree).
+
 module = ZROS_SENSE_STREAM_IMU
 module-str = sense_stream_imu
 source "subsys/logging/Kconfig.template.log_config"
