@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <time.h>
+
 #include <zephyr/drivers/gnss.h>
 #include <zros/private/zros_node_struct.h>
 #include <zros/private/zros_pub_struct.h>
@@ -16,6 +18,29 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(sense_gnss, CONFIG_ZROS_SENSE_GNSS_LOG_LEVEL);
 
+/**
+ * @brief Convert GNSS UTC time to Unix epoch seconds
+ * @param utc Pointer to GNSS time structure
+ * @return Unix epoch seconds, or 0 if conversion fails
+ */
+static int64_t gnss_time_to_epoch(const struct gnss_time *utc)
+{
+	struct tm tm = {
+		.tm_sec = utc->millisecond / 1000,
+		.tm_min = utc->minute,
+		.tm_hour = utc->hour,
+		.tm_mday = utc->month_day,
+		.tm_mon = utc->month - 1,           /* tm_mon is 0-11 */
+		.tm_year = utc->century_year + 100, /* tm_year is years since 1900 */
+		.tm_isdst = 0,
+	};
+	time_t t = mktime(&tm);
+	if (t == (time_t)-1) {
+		return 0;
+	}
+	return (int64_t)t;
+}
+
 typedef struct context {
 	struct zros_node node;
 	struct zros_pub pub;
@@ -23,6 +48,7 @@ typedef struct context {
 	int32_t gMeasurementPeriodMs;
 	bool running;
 	bool isAlive;
+	bool hadFix;
 } context_t;
 
 #define GNSS_MODEM DEVICE_DT_GET(DT_ALIAS(gnss))
@@ -42,6 +68,7 @@ static context_t g_ctx = {
 	},
 	.running = false,
 	.isAlive = false,
+	.hadFix = false,
 };
 
 static void gnss_data_cb(const struct device *dev, const struct gnss_data *data)
@@ -53,17 +80,29 @@ static void gnss_data_cb(const struct device *dev, const struct gnss_data *data)
 		return;
 	}
 
-	stamp_msg(&g_ctx.data.stamp, k_uptime_ticks());
 	g_ctx.isAlive = true;
 
 	if (data->info.fix_status != GNSS_FIX_STATUS_NO_FIX) {
+		if (!g_ctx.hadFix) {
+			LOG_INF("GNSS fix acquired. SV tracked: %d", data->info.satellites_cnt);
+			g_ctx.hadFix = true;
+		}
+		/* Use actual GPS UTC time for timestamp */
+		g_ctx.data.stamp.seconds = gnss_time_to_epoch(&data->utc);
+		g_ctx.data.stamp.nanos = (data->utc.millisecond % 1000) * 1000000;
+
 		g_ctx.data.latitude = data->nav_data.latitude / 1e9;
 		g_ctx.data.longitude = data->nav_data.longitude / 1e9;
 		g_ctx.data.altitude = data->nav_data.altitude / 1e3;
 		zros_pub_update(&g_ctx.pub);
 		LOG_DBG("lat %f long %f\n", g_ctx.data.latitude, g_ctx.data.longitude);
 	} else {
-		LOG_WRN("gnss update without fix. SV tracked: %d", data->info.satellites_cnt);
+		if (g_ctx.hadFix) {
+			LOG_WRN("GNSS fix lost. SV tracked: %d", data->info.satellites_cnt);
+		}
+		g_ctx.hadFix = false;
+		LOG_INF_RATELIMIT_RATE(30000, "waiting for fix. SV tracked: %d",
+				       data->info.satellites_cnt);
 	}
 }
 GNSS_DATA_CALLBACK_DEFINE(GNSS_MODEM, gnss_data_cb);
