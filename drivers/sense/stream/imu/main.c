@@ -173,41 +173,36 @@ static void feed_calibration(struct context *ctx,
 				      accel_mean[2] * accel_mean[2]);
 
 	if (accel_magnitude < 8.0 || accel_magnitude > 11.0) {
-		LOG_WRN("%s: accel magnitude out of range: %10.4f (expected ~9.8)",
+		LOG_WRN_RATELIMIT_RATE(5000, "%s: accel magnitude out of range: %10.4f (expected ~9.8)",
 			ctx->name, accel_magnitude);
 		calibration_ok = false;
 	}
 
 	for (size_t i = 0 ; i < ARRAY_SIZE(gyro_std) ; i++) {
 		if (gyro_std[i] > 0.1) {
-			LOG_WRN("%s: gyro axis %d too noisy: std=%10.4f", ctx->name,
+			LOG_WRN_RATELIMIT_RATE(5000, "%s: gyro axis %d too noisy: std=%10.4f", ctx->name,
 				i, gyro_std[i]);
 			calibration_ok = false;
 		}
 	}
 
 	if (!calibration_ok) {
-		LOG_WRN("%s: Calibration failed. Retrying...", ctx->name);
+		LOG_WRN_RATELIMIT_RATE(5000, "%s: Calibration failed. Retrying...", ctx->name);
 		ctx->calibration.state = SENSE_IMU_STREAM_UNCALIBRATED;
 		return;
 	}
 
-	LOG_INF("%s: Calibration completed", ctx->name);
 	ctx->calibration.bias.accel[0] = accel_mean[0];
 	ctx->calibration.bias.accel[1] = accel_mean[1];
 	ctx->calibration.bias.accel[2] = 0;
 	ctx->calibration.accel_scale = accel_magnitude / ACCEL_G;
-	LOG_INF("%s: accel", ctx->name);
-	LOG_INF("%s: mean: %10.4f %10.4f %10.4f", ctx->name,
-		accel_mean[0], accel_mean[1], accel_mean[2]);
-	LOG_INF("%s: std: %10.4f %10.4f %10.4f", ctx->name,
-		accel_std[0], accel_std[1], accel_std[2]);
-	LOG_INF("%s: scale %10.4f", ctx->name, ctx->calibration.accel_scale);
 
-	LOG_INF("%s gyro", ctx->name);
-	LOG_INF("%s mean: %10.4f %10.4f %10.4f", ctx->name,
-		gyro_mean[0], gyro_mean[1], gyro_mean[2]);
-	LOG_INF("%s: std: %10.4f %10.4f %10.4f", ctx->name,
+	LOG_INF("%s: Calibration completed (scale=%.3f)", ctx->name, ctx->calibration.accel_scale);
+	LOG_DBG("%s: accel mean: %7.4f %7.4f %7.4f std: %7.4f %7.4f %7.4f", ctx->name,
+		accel_mean[0], accel_mean[1], accel_mean[2],
+		accel_std[0], accel_std[1], accel_std[2]);
+	LOG_DBG("%s: gyro  mean: %7.4f %7.4f %7.4f std: %7.4f %7.4f %7.4f", ctx->name,
+		gyro_mean[0], gyro_mean[1], gyro_mean[2],
 		gyro_std[0], gyro_std[1], gyro_std[2]);
 
 	for (int i = 0; i < ARRAY_SIZE(gyro_mean); i++) {
@@ -397,7 +392,7 @@ static void imu_stream_thread(void *arg0)
 							K_MSEC(100));
 		if (err != 0 || !ctx->running) {
 			ctx->running = false;
-			LOG_ERR("Error during stream. Attempting recovery...");
+			LOG_ERR_RATELIMIT_RATE(5000, "Error during stream. Attempting recovery...");
 			do {
 				/* TODO: Decide when we've tried too much. */
 				k_sleep(K_MSEC(100));

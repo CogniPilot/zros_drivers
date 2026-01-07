@@ -199,7 +199,7 @@ static void mag_stream_thread(void *arg0)
 							K_MSEC(1000));
 		if (err != 0 || !ctx->running) {
 			ctx->running = false;
-			LOG_ERR("Error during stream. Attempting recovery...");
+			LOG_ERR_RATELIMIT_RATE(5000, "Error during stream. Attempting recovery...");
 			do {
 				/* TODO: Decide when we've tried too much. */
 				k_sleep(K_MSEC(1000));
