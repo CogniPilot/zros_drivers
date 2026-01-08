@@ -4,6 +4,7 @@
 
 config ZROS_SENSE_IMU
 	bool "ZROS IMU driver"
+  select SENSOR_THREE_AXIS_REF
 	help
 	  This option enables the ZROS IMU driver interface
 
