@@ -243,9 +243,11 @@ K_THREAD_DEFINE(mag_stream_thread_##i##_id, 1024, mag_stream_thread,				   \
 	IF_ENABLED(DT_NODE_EXISTS(MAG_ALIAS(i)), (MAG_STREAM_DEFINE(i)))
 
 MAG_STREAM_DEFINE_IF_EXISTS(0);
+MAG_STREAM_DEFINE_IF_EXISTS(1);
 
 #define MAG_STREAM_CTX_LIST									   \
-		IF_ENABLED(DT_NODE_EXISTS(MAG_ALIAS(0)), (&mag_stream_context_0,))
+		IF_ENABLED(DT_NODE_EXISTS(MAG_ALIAS(0)), (&mag_stream_context_0,))		   \
+		IF_ENABLED(DT_NODE_EXISTS(MAG_ALIAS(1)), (&mag_stream_context_1,))
 
 struct context * const mag_list[] = {
 		MAG_STREAM_CTX_LIST

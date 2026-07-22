@@ -44,7 +44,7 @@ int sense_rtcm3_sub_fn(context_t *ctx)
 {
 	LOG_INF("init");
 	zros_node_init(&ctx->node, ctx->name);
-	zros_sub_init(&ctx->sub_rtcm3, &ctx->node, &topic_status, &ctx->data, 10);
+	zros_sub_init(&ctx->sub_rtcm3, &ctx->node, &topic_rtcm3, &ctx->data, 10);
 
 	struct k_poll_event events[] = {
 		*zros_sub_get_event(&ctx->sub_rtcm3),
