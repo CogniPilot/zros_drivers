@@ -163,6 +163,25 @@ static void process_events(int result, uint8_t *buf, uint32_t len, void *userdat
 	mag_publish(ctx);
 }
 
+/** Return every completion still queued, together with the mempool buffer it
+ * carries, before a new stream is armed. Without this, the buffers held by
+ * completions produced while the consumer was not draining stay allocated and
+ * the block pool starves the driver on its next data-ready event.
+ */
+static void drain_completions(struct rtio *rtio_ctx)
+{
+	struct rtio_cqe *cqe;
+
+	while ((cqe = rtio_cqe_consume(rtio_ctx)) != NULL) {
+		uint8_t *buf = NULL;
+		uint32_t buf_len = 0;
+
+		rtio_cqe_get_mempool_buffer(rtio_ctx, cqe, &buf, &buf_len);
+		rtio_cqe_release(rtio_ctx, cqe);
+		rtio_release_buffer(rtio_ctx, buf, buf_len);
+	}
+}
+
 static int setup_stream(struct context *ctx)
 {
 	struct rtio *rtio_ctx = ctx->stream.ctx;
@@ -170,6 +189,8 @@ static int setup_stream(struct context *ctx)
 	int err;
 
 	LOG_INF("setting up stream %p...", iodev);
+
+	drain_completions(rtio_ctx);
 
 	err = sensor_stream(iodev, rtio_ctx, (void *)iodev, NULL);
 	if (err != 0) {
@@ -209,9 +230,15 @@ static void mag_stream_thread(void *arg0)
 	}
 }
 
+/** The completion queue holds at least as many entries as the block pool holds
+ * 32-byte sample buffers (512 / 32 = 16). A completion that cannot be queued is
+ * dropped by the RTIO core and the mempool buffer it references is never
+ * returned, so an under-sized completion queue turns a scheduling delay into a
+ * permanent buffer leak.
+ */
 #define MAG_STREAM_DEFINE(i)									   \
 												   \
-RTIO_DEFINE_WITH_MEMPOOL(mag_stream_ctx_##i, 2, 4, 128, 4, sizeof(void *));			   \
+RTIO_DEFINE_WITH_MEMPOOL(mag_stream_ctx_##i, 2, 16, 128, 4, sizeof(void *));			   \
 SENSOR_DT_STREAM_IODEV(mag_stream_iodev_##i, MAG_ALIAS(i),					   \
 		       {SENSOR_TRIG_DATA_READY, SENSOR_STREAM_DATA_INCLUDE});			   \
 												   \
