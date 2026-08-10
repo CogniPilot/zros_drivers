@@ -53,7 +53,7 @@ struct context {
 	struct zros_node node;
 	struct zros_pub pub_imu;
 	struct zros_topic *pub_topic;
-	synapse_pb_Imu imu;
+	synapse_topic_InertialSample_t sample;
 	struct zros_sub sub_status;
 	synapse_pb_Status status;
 	synapse_pb_Status_Mode last_mode;
@@ -277,16 +277,17 @@ static int decode_data(struct rtio_iodev *iodev, uint8_t *buf, enum sensor_chann
 
 static void imu_publish(struct context *ctx)
 {
-	stamp_msg(&ctx->imu.stamp, k_uptime_ticks());
-	ctx->imu.linear_acceleration.x =
+	/* Accel and gyro only; flags, time_status and id are set at init. */
+	ctx->sample.timestamp_ns = k_ticks_to_ns_floor64(k_uptime_ticks());
+	ctx->sample.accel_flu_m_s2.x =
 		(ctx->raw.accel[0] - ctx->calibration.bias.accel[0]) / ctx->calibration.accel_scale;
-	ctx->imu.linear_acceleration.y =
+	ctx->sample.accel_flu_m_s2.y =
 		(ctx->raw.accel[1] - ctx->calibration.bias.accel[1]) / ctx->calibration.accel_scale;
-	ctx->imu.linear_acceleration.z =
+	ctx->sample.accel_flu_m_s2.z =
 		(ctx->raw.accel[2] - ctx->calibration.bias.accel[2]) / ctx->calibration.accel_scale;
-	ctx->imu.angular_velocity.x = (ctx->raw.gyro[0] - ctx->calibration.bias.gyro[0]);
-	ctx->imu.angular_velocity.y = (ctx->raw.gyro[1] - ctx->calibration.bias.gyro[1]);
-	ctx->imu.angular_velocity.z = (ctx->raw.gyro[2] - ctx->calibration.bias.gyro[2]);
+	ctx->sample.gyro_flu_rad_s.x = (ctx->raw.gyro[0] - ctx->calibration.bias.gyro[0]);
+	ctx->sample.gyro_flu_rad_s.y = (ctx->raw.gyro[1] - ctx->calibration.bias.gyro[1]);
+	ctx->sample.gyro_flu_rad_s.z = (ctx->raw.gyro[2] - ctx->calibration.bias.gyro[2]);
 
 	zros_pub_update(&ctx->pub_imu);
 }
@@ -386,7 +387,7 @@ static void imu_stream_thread(void *arg0)
 
 	LOG_INF("init");
 	zros_node_init(&ctx->node, ctx->name);
-	zros_pub_init(&ctx->pub_imu, &ctx->node, ctx->pub_topic, &ctx->imu);
+	zros_pub_init(&ctx->pub_imu, &ctx->node, ctx->pub_topic, &ctx->sample);
 	zros_sub_init(&ctx->sub_status, &ctx->node, &topic_status, &ctx->status, 1);
 
 	err = setup_stream(ctx);
@@ -424,14 +425,12 @@ static struct context imu_stream_context_##i = {						   \
 	.node = {},										   \
 	.pub_imu = {},										   \
 	.pub_topic = &topic_imu##i,								   \
-	.imu = {										   \
-		.has_stamp = true,								   \
-		.stamp = synapse_pb_Timestamp_init_default,					   \
-		.has_angular_velocity = true,							   \
-		.angular_velocity = synapse_pb_Vector3_init_default,				   \
-		.has_linear_acceleration = true,						   \
-		.linear_acceleration = synapse_pb_Vector3_init_default,				   \
-		.has_orientation = false,							   \
+	.sample = {										   \
+		/* accel and gyro groups are updated every sample */			   \
+		.flags = SYNAPSE_TOPIC_INERTIAL_FIELD_FLAG_ACCEL |				   \
+			 SYNAPSE_TOPIC_INERTIAL_FIELD_FLAG_GYRO,				   \
+		.time_status = SYNAPSE_TYPES_TIME_STATUS_LOCAL_FREERUN,				   \
+		.id = (i),									   \
 	},											   \
 	.sub_status = {},									   \
 	.status = synapse_pb_Status_init_default,						   \

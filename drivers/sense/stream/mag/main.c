@@ -38,7 +38,7 @@ struct context {
 	struct zros_node node;
 	struct zros_pub pub_mag;
 	struct zros_topic *pub_topic;
-	synapse_pb_MagneticField mag;
+	synapse_topic_InertialSample_t sample;
 	bool running;
 	struct {
 		double mag[3];
@@ -129,10 +129,11 @@ static int decode_data(struct rtio_iodev *iodev, uint8_t *buf, enum sensor_chann
 
 static void mag_publish(struct context *ctx)
 {
-	stamp_msg(&ctx->mag.stamp, k_uptime_ticks());
-	ctx->mag.magnetic_field.x = ctx->raw.mag[0];
-	ctx->mag.magnetic_field.y = ctx->raw.mag[1];
-	ctx->mag.magnetic_field.z = ctx->raw.mag[2];
+	/* Mag only; accel and gyro stay zero, flags/time_status/id set at init. */
+	ctx->sample.timestamp_ns = k_ticks_to_ns_floor64(k_uptime_ticks());
+	ctx->sample.mag_flu_tesla.x = ctx->raw.mag[0];
+	ctx->sample.mag_flu_tesla.y = ctx->raw.mag[1];
+	ctx->sample.mag_flu_tesla.z = ctx->raw.mag[2];
 	zros_pub_update(&ctx->pub_mag);
 }
 
@@ -210,7 +211,7 @@ static void mag_stream_thread(void *arg0)
 
 	LOG_INF("init");
 	zros_node_init(&ctx->node, ctx->name);
-	zros_pub_init(&ctx->pub_mag, &ctx->node, ctx->pub_topic, &ctx->mag);
+	zros_pub_init(&ctx->pub_mag, &ctx->node, ctx->pub_topic, &ctx->sample);
 
 	err = setup_stream(ctx);
 	__ASSERT(!err, "Failed to start stream for %p", ctx->stream.iodev);
@@ -246,15 +247,12 @@ static struct context mag_stream_context_##i = {						   \
 	.name = STRINGIFY(sense_mag_##i),							   \
 	.node = {},										   \
 	.pub_mag = {},										   \
-	.pub_topic = &topic_magnetic_field,							   \
-	.mag = {										   \
-		.has_stamp = true,								   \
-		.stamp = synapse_pb_Timestamp_init_default,					   \
-		.frame_id = "base_link",							   \
-		.magnetic_field = synapse_pb_Vector3_init_default,				   \
-		.has_magnetic_field = true,							   \
-		.magnetic_field_covariance = {},						   \
-		.magnetic_field_covariance_count = 0,						   \
+	.pub_topic = &topic_imu,								   \
+	.sample = {										   \
+		/* only the mag group is updated by this producer */			   \
+		.flags = SYNAPSE_TOPIC_INERTIAL_FIELD_FLAG_MAG,					   \
+		.time_status = SYNAPSE_TYPES_TIME_STATUS_LOCAL_FREERUN,				   \
+		.id = (i),									   \
 	},											   \
 	.running = false,									   \
 	.stream = {										   \
