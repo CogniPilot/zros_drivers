@@ -38,7 +38,7 @@ struct context {
 	struct zros_node node;
 	struct zros_pub pub_mag;
 	struct zros_topic *pub_topic;
-	synapse_topic_InertialSample_t sample;
+	synapse_topic_MagneticField_t sample;
 	bool running;
 	struct {
 		double mag[3];
@@ -129,7 +129,7 @@ static int decode_data(struct rtio_iodev *iodev, uint8_t *buf, enum sensor_chann
 
 static void mag_publish(struct context *ctx)
 {
-	/* Mag only; accel and gyro stay zero, flags/time_status/id set at init. */
+	/* Magnetic field only; flags/time_status/id set at init. */
 	ctx->sample.timestamp_ns = k_ticks_to_ns_floor64(k_uptime_ticks());
 	ctx->sample.mag_flu_tesla.x = ctx->raw.mag[0];
 	ctx->sample.mag_flu_tesla.y = ctx->raw.mag[1];
@@ -247,10 +247,10 @@ static struct context mag_stream_context_##i = {						   \
 	.name = STRINGIFY(sense_mag_##i),							   \
 	.node = {},										   \
 	.pub_mag = {},										   \
-	.pub_topic = &topic_imu,								   \
+	.pub_topic = &topic_mag##i,								   \
 	.sample = {										   \
-		/* only the mag group is updated by this producer */			   \
-		.flags = SYNAPSE_TOPIC_INERTIAL_FIELD_FLAG_MAG,					   \
+		/* magnetic field only; die temperature is not populated */			   \
+		.flags = 0,								   \
 		.time_status = SYNAPSE_TYPES_TIME_STATUS_LOCAL_FREERUN,				   \
 		.id = (i),									   \
 	},											   \
