@@ -15,6 +15,10 @@
 
 #include <synapse_topic_list.h>
 
+#if defined(CONFIG_SPINALI_SYNAPSE_ZENOH_ARGUS_POINTCLOUD)
+#include <synapse_time_status.h>
+#endif
+
 #include <zros/private/zros_node_struct.h>
 #include <zros/private/zros_pub_struct.h>
 #include <zros/private/zros_sub_struct.h>
@@ -43,6 +47,13 @@ struct context {
 	struct zros_topic *pub_topic;
 	bool running;
 	synapse_topic_ArgusResults_t data;
+#if defined(CONFIG_SPINALI_SYNAPSE_ZENOH_ARGUS_POINTCLOUD)
+	/* opt-in per-pixel wire sample published alongside the raw topic */
+	struct zros_pub pub_pointcloud;
+	struct zros_topic *pointcloud_topic;
+	synapse_topic_ArgusPointCloudData_t pointcloud;
+	bool time_ever_synced;
+#endif
 	struct {
 		struct rtio *ctx;
 		struct rtio_iodev *iodev;
@@ -129,6 +140,41 @@ static inline void fill_pixel_data(struct context *ctx, argus_results_t *payload
 	ctx->data.pixel_ref.snr = Z_SHIFT_UQ16_TO_F32(payload->Pixels[32].SNR, 12);
 }
 
+#if defined(CONFIG_SPINALI_SYNAPSE_ZENOH_ARGUS_POINTCLOUD)
+/*
+ * Opt-in per-pixel wire sample: the 32-zone range/intensity field plus the
+ * reference pixel, filled straight from the SDK result so it is complete in
+ * every data mode. timestamp_ns is the raw-topic boot stamp shifted onto the
+ * shared timescale by the gPTP offset when the node is synchronized.
+ */
+static void argus_publish_pointcloud(struct context *ctx, argus_results_t *payload)
+{
+	synapse_topic_ArgusPointCloudData_t *pc = &ctx->pointcloud;
+	int64_t offset_ns = 0;
+
+	pc->time_status = synapse_time_status_resolve(&ctx->time_ever_synced, &offset_ns);
+	pc->timestamp_ns = (uint64_t)((int64_t)ctx->data.timestamp_ns + offset_ns);
+
+	for (size_t i = 0; i < 32; i++) {
+		pc->range_m.px_m[i] = Z_SHIFT_Q31_TO_F32(payload->Pixels[i].Range, 9);
+		pc->amplitude_lsb.px_lsb[i] =
+			Z_SHIFT_UQ16_TO_F32(payload->Pixels[i].Amplitude, 12);
+		pc->pixel_status.px[i] = payload->Pixels[i].Status;
+	}
+	pc->reference_range_m = Z_SHIFT_Q31_TO_F32(payload->Pixels[32].Range, 9);
+	pc->reference_amplitude_lsb = Z_SHIFT_UQ16_TO_F32(payload->Pixels[32].Amplitude, 12);
+	pc->reference_status = payload->Pixels[32].Status;
+
+	pc->integration_time_us = payload->Frame.IntegrationTime;
+	pc->pixel_enabled_mask = payload->Frame.PxEnMask;
+	pc->channel_enabled_mask = payload->Frame.ChEnMask;
+	pc->device_status = payload->Status;
+	pc->signal_quality = payload->Bin.SignalQuality;
+
+	zros_pub_update(&ctx->pub_pointcloud);
+}
+#endif /* CONFIG_SPINALI_SYNAPSE_ZENOH_ARGUS_POINTCLOUD */
+
 static void argus_publish(struct context *ctx, argus_results_t *payload)
 {
 	ctx->data.timestamp_ns = k_ticks_to_ns_floor64(k_uptime_ticks());
@@ -151,6 +197,10 @@ static void argus_publish(struct context *ctx, argus_results_t *payload)
 		ctx->data.has_frame = false;
 	}
 	zros_pub_update(&ctx->pub);
+
+#if defined(CONFIG_SPINALI_SYNAPSE_ZENOH_ARGUS_POINTCLOUD)
+	argus_publish_pointcloud(ctx, payload);
+#endif
 }
 
 static void process_events(int result, uint8_t *buf, uint32_t len, void *userdata)
@@ -195,6 +245,9 @@ static void argus_stream_thread(void *arg0)
 	LOG_INF("init");
 	zros_node_init(&ctx->node, ctx->name);
 	zros_pub_init(&ctx->pub, &ctx->node, ctx->pub_topic, &ctx->data);
+#if defined(CONFIG_SPINALI_SYNAPSE_ZENOH_ARGUS_POINTCLOUD)
+	zros_pub_init(&ctx->pub_pointcloud, &ctx->node, ctx->pointcloud_topic, &ctx->pointcloud);
+#endif
 
 	err = setup_stream(ctx);
 	__ASSERT(!err, "Failed to start stream for %p", ctx->stream.iodev);
@@ -231,6 +284,11 @@ static struct context dist_stream_context_##i = {						   \
 					   \
 		.has_bin = true,								   \
 	},											   \
+	IF_ENABLED(CONFIG_SPINALI_SYNAPSE_ZENOH_ARGUS_POINTCLOUD,				   \
+		   (.pointcloud_topic = &topic_argus_pointcloud,				   \
+		    .pointcloud = {								   \
+			    .id = i,								   \
+		    },))									   \
 	.stream = {										   \
 		.ctx = &dist_stream_ctx_##i,							   \
 		.iodev = &dist_stream_iodev_##i,						   \

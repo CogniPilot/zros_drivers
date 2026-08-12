@@ -13,6 +13,7 @@
 
 #include <zros/perf_duration.h>
 
+#include <synapse_time_status.h>
 #include <synapse_topic_list.h>
 
 #include <zros/private/zros_node_struct.h>
@@ -58,6 +59,7 @@ struct context {
 	synapse_topic_Status_t status;
 	uint8_t last_mode;
 	bool running;
+	bool time_ever_synced;
 	struct {
 		enum sense_imu_stream_calibration_st state;
 		float accel_scale;
@@ -277,8 +279,16 @@ static int decode_data(struct rtio_iodev *iodev, uint8_t *buf, enum sensor_chann
 
 static void imu_publish(struct context *ctx)
 {
-	/* Accel and gyro only; flags, time_status and id are set at init. */
-	ctx->sample.timestamp_ns = k_ticks_to_ns_floor64(k_uptime_ticks());
+	int64_t offset_ns;
+
+	/** Accel and gyro only; flags and id are set at init. When this node is
+	 * disciplined as a gPTP slave, offset_ns carries the boot-clock stamp onto
+	 * the shared grandmaster timescale; before the first lock it is zero and
+	 * the stamp stays node-local monotonic boot time. time_status names the
+	 * domain the stamp is on.
+	 */
+	ctx->sample.time_status = synapse_time_status_resolve(&ctx->time_ever_synced, &offset_ns);
+	ctx->sample.timestamp_ns = k_ticks_to_ns_floor64(k_uptime_ticks()) + offset_ns;
 	ctx->sample.accel_flu_m_s2.x =
 		(ctx->raw.accel[0] - ctx->calibration.bias.accel[0]) / ctx->calibration.accel_scale;
 	ctx->sample.accel_flu_m_s2.y =
@@ -429,12 +439,12 @@ static struct context imu_stream_context_##i = {						   \
 		/* accel and gyro groups are updated every sample */			   \
 		.flags = SYNAPSE_TOPIC_INERTIAL_FIELD_FLAG_ACCEL |				   \
 			 SYNAPSE_TOPIC_INERTIAL_FIELD_FLAG_GYRO,				   \
-		.time_status = SYNAPSE_TYPES_TIME_STATUS_LOCAL_FREERUN,				   \
 		.id = (i),									   \
 	},											   \
 	.sub_status = {},									   \
 	.status = {},						   \
 	.running = false,									   \
+	.time_ever_synced = false,								   \
 	.calibration = {									   \
 		.state = SENSE_IMU_STREAM_UNCALIBRATED,						   \
 	},											   \

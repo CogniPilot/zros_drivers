@@ -13,6 +13,7 @@
 
 #include <zros/perf_duration.h>
 
+#include <synapse_time_status.h>
 #include <synapse_topic_list.h>
 
 #include <zros/private/zros_node_struct.h>
@@ -39,6 +40,7 @@ struct context {
 	struct zros_pub pub_mag;
 	struct zros_topic *pub_topic;
 	synapse_topic_MagneticField_t sample;
+	bool time_ever_synced;
 	bool running;
 	struct {
 		double mag[3];
@@ -129,8 +131,18 @@ static int decode_data(struct rtio_iodev *iodev, uint8_t *buf, enum sensor_chann
 
 static void mag_publish(struct context *ctx)
 {
-	/* Magnetic field only; flags/time_status/id set at init. */
-	ctx->sample.timestamp_ns = k_ticks_to_ns_floor64(k_uptime_ticks());
+	/* Magnetic field only; flags/id set at init. */
+	int64_t time_offset_ns = 0;
+
+	/* When this node is disciplined as a gPTP slave, time_offset_ns carries
+	 * the boot-clock stamp onto the shared grandmaster timescale; before the
+	 * first lock it is zero and the stamp stays node-local monotonic boot
+	 * time. time_status names the domain the stamp is on.
+	 */
+	ctx->sample.time_status =
+		synapse_time_status_resolve(&ctx->time_ever_synced, &time_offset_ns);
+	ctx->sample.timestamp_ns =
+		(uint64_t)((int64_t)k_ticks_to_ns_floor64(k_uptime_ticks()) + time_offset_ns);
 	ctx->sample.mag_flu_tesla.x = ctx->raw.mag[0];
 	ctx->sample.mag_flu_tesla.y = ctx->raw.mag[1];
 	ctx->sample.mag_flu_tesla.z = ctx->raw.mag[2];
@@ -252,9 +264,9 @@ static struct context mag_stream_context_##i = {						   \
 	.sample = {										   \
 		/* magnetic field only; die temperature is not populated */			   \
 		.flags = 0,								   \
-		.time_status = SYNAPSE_TYPES_TIME_STATUS_LOCAL_FREERUN,				   \
 		.id = (i),									   \
 	},											   \
+	.time_ever_synced = false,								   \
 	.running = false,									   \
 	.stream = {										   \
 		.ctx = &mag_stream_ctx_##i,							   \

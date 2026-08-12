@@ -14,6 +14,7 @@
 #include <zros/zros_node.h>
 #include <zros/zros_pub.h>
 
+#include <synapse_time_status.h>
 #include <synapse_topic_list.h>
 
 #include <zephyr/logging/log.h>
@@ -26,6 +27,7 @@ typedef struct context {
 	int32_t gMeasurementPeriodMs;
 	bool running;
 	bool isAlive;
+	bool time_ever_synced;
 } context_t;
 
 #define GNSS_MODEM DEVICE_DT_GET(DT_ALIAS(gnss))
@@ -36,6 +38,7 @@ static context_t g_ctx = {
 	.data = {},
 	.running = false,
 	.isAlive = false,
+	.time_ever_synced = false,
 };
 
 /* Narrow a wider unsigned quantity to uint16_t, saturating instead of wrapping. */
@@ -88,9 +91,17 @@ static void gnss_data_cb(const struct device *dev, const struct gnss_data *data)
 
 	memset(fix, 0, sizeof(*fix));
 
-	/* Boot-clock timestamp; the shared gPTP timescale is not resolved here yet. */
-	fix->timestamp_ns = k_ticks_to_ns_floor64(k_uptime_ticks());
-	fix->time_status = SYNAPSE_TYPES_TIME_STATUS_LOCAL_FREERUN;
+	/*
+	 * Boot-clock stamp carried onto the shared grandmaster timescale by the
+	 * gPTP offset when this node is disciplined as a slave; before the first
+	 * lock the offset is zero and the stamp stays node-local monotonic boot
+	 * time. time_status names the domain the stamp is on.
+	 */
+	int64_t time_offset_ns = 0;
+
+	fix->time_status = synapse_time_status_resolve(&g_ctx.time_ever_synced, &time_offset_ns);
+	fix->timestamp_ns =
+		(uint64_t)((int64_t)k_ticks_to_ns_floor64(k_uptime_ticks()) + time_offset_ns);
 
 	/* nav_data angles are nanodegrees; the wire uses degrees * 1e7 (nanodeg / 100). */
 	fix->latitude_deg_e7 = (int32_t)(data->nav_data.latitude / 100);
@@ -125,8 +136,8 @@ static void gnss_data_cb(const struct device *dev, const struct gnss_data *data)
 	/*
 	 * Only course over ground is available. Vehicle yaw and vertical velocity
 	 * are not surfaced by the Zephyr GNSS API, so those flags stay clear and
-	 * their fields stay zero. time_unix_ns is left unset while the clock is
-	 * free-running, so TIME_VALID stays clear as well.
+	 * their fields stay zero. time_unix_ns (the receiver-reported UTC) is
+	 * not populated here, so TIME_VALID stays clear as well.
 	 */
 	fix->flags = SYNAPSE_TOPIC_GNSS_FIX_FLAG_COURSE_VALID;
 
