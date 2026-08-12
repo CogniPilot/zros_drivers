@@ -158,8 +158,9 @@ static void process_events(int result, uint8_t *buf, uint32_t len, void *userdat
 	}
 
 	for (size_t i = 0 ; i < 3 ; i++) {
+		/* SENSOR_CHAN_MAGN_* is gauss (Zephyr convention); convert to tesla. */
 		ctx->raw.mag[i] = Z_SHIFT_Q31_TO_F32(mag_avg_data.readings[0].values[i],
-						     mag_avg_data.shift);
+						     mag_avg_data.shift) * 1e-4f;
 	}
 	mag_publish(ctx);
 }
