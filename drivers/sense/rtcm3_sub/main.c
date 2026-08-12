@@ -21,7 +21,7 @@ typedef struct context {
 	const char *name;
 	struct zros_node node;
 	struct zros_sub sub_rtcm3;
-	synapse_pb_Rtcm3 data;
+	synapse_topic_Rtcm3_t data;
 } context_t;
 
 static context_t g_ctx = {
@@ -33,8 +33,8 @@ static context_t g_ctx = {
 static inline void send_rtcm3_frame(context_t *ctx)
 {
 	struct gnss_rtk_data rtcm3_frame = {
-		.data = ctx->data.data.bytes,
-		.len = ctx->data.data.size,
+		.data = ctx->data.data,
+		.len = ctx->data.len,
 	};
 
 	gnss_rtk_publish_data(&rtcm3_frame);

@@ -29,7 +29,7 @@ LOG_MODULE_REGISTER(sense_imu_stream, CONFIG_ZROS_SENSE_STREAM_IMU_LOG_LEVEL);
  */
 #define Z_SHIFT_Q31_TO_F32(src, m) ((float32_t)(((int64_t)src) << m) / (float32_t)(1U << 31))
 
-#define ACCEL_G ((double)SENSOR_G / 1000000)
+#define ACCEL_G ((float)SENSOR_G / 1000000)
 
 #define IMU_STREAM_CALIBRATION_COUNT 100
 
@@ -55,25 +55,25 @@ struct context {
 	struct zros_topic *pub_topic;
 	synapse_topic_InertialSample_t sample;
 	struct zros_sub sub_status;
-	synapse_pb_Status status;
-	synapse_pb_Status_Mode last_mode;
+	synapse_topic_Status_t status;
+	uint8_t last_mode;
 	bool running;
 	struct {
 		enum sense_imu_stream_calibration_st state;
-		double accel_scale;
+		float accel_scale;
 		struct {
-			double accel[IMU_STREAM_CALIBRATION_COUNT][3];
-			double gyro[IMU_STREAM_CALIBRATION_COUNT][3];
+			float accel[IMU_STREAM_CALIBRATION_COUNT][3];
+			float gyro[IMU_STREAM_CALIBRATION_COUNT][3];
 		} samples;
 		struct {
-			double accel[3];
-			double gyro[3];
+			float accel[3];
+			float gyro[3];
 		} bias;
 		size_t count;
 	} calibration;
 	struct {
-		double accel[3];
-		double gyro[3];
+		float accel[3];
+		float gyro[3];
 	} raw;
 	struct {
 		struct rtio *ctx;
@@ -118,11 +118,11 @@ static void feed_calibration(struct context *ctx,
 
 	for (size_t i = 0 ; i < ARRAY_SIZE(ctx->calibration.bias.accel) ; i++) {
 		ctx->calibration.samples.accel[ctx->calibration.count][i] =
-			(double)Z_SHIFT_Q31_TO_F32(accel->readings[0].values[i], accel->shift);
+			(float)Z_SHIFT_Q31_TO_F32(accel->readings[0].values[i], accel->shift);
 	}
 	for (size_t i = 0 ; i < ARRAY_SIZE(ctx->calibration.bias.gyro) ; i++) {
 		ctx->calibration.samples.gyro[ctx->calibration.count][i] =
-			(double)Z_SHIFT_Q31_TO_F32(gyro->readings[0].values[i], gyro->shift);
+			(float)Z_SHIFT_Q31_TO_F32(gyro->readings[0].values[i], gyro->shift);
 	}
 	ctx->calibration.count++;
 
@@ -132,10 +132,10 @@ static void feed_calibration(struct context *ctx,
 	}
 
 	/* We have enough samples. Proceed to calculate statistics and finish calibration */
-	double accel_mean[3] = {0};
-	double gyro_mean[3] = {0};
-	double accel_std[3] = {0};
-	double gyro_std[3] = {0};
+	float accel_mean[3] = {0};
+	float gyro_mean[3] = {0};
+	float accel_std[3] = {0};
+	float gyro_std[3] = {0};
 	bool calibration_ok = true;
 
 	for (size_t i = 0 ; i < IMU_STREAM_CALIBRATION_COUNT ; i++) {
@@ -151,35 +151,35 @@ static void feed_calibration(struct context *ctx,
 
 	for (size_t i = 0 ; i < IMU_STREAM_CALIBRATION_COUNT ; i++) {
 		for (size_t j = 0; j < ARRAY_SIZE(accel_std) ; j++) {
-			double e = ctx->calibration.samples.accel[i][j] - accel_mean[j];
+			float e = ctx->calibration.samples.accel[i][j] - accel_mean[j];
 
 			accel_std[j] += e * e;
 		}
 		for (size_t j = 0; j < ARRAY_SIZE(gyro_std) ; j++) {
-			double e = ctx->calibration.samples.gyro[i][j] - gyro_mean[j];
+			float e = ctx->calibration.samples.gyro[i][j] - gyro_mean[j];
 
 			gyro_std[j] += e * e;
 		}
 	}
 
 	for (size_t i = 0 ; i < ARRAY_SIZE(accel_std) ; i++) {
-		accel_std[i] = sqrt(accel_std[i] / IMU_STREAM_CALIBRATION_COUNT);
+		accel_std[i] = sqrtf(accel_std[i] / IMU_STREAM_CALIBRATION_COUNT);
 	}
 	for (size_t i = 0 ; i < ARRAY_SIZE(gyro_std) ; i++) {
-		gyro_std[i] = sqrt(gyro_std[i] / IMU_STREAM_CALIBRATION_COUNT);
+		gyro_std[i] = sqrtf(gyro_std[i] / IMU_STREAM_CALIBRATION_COUNT);
 	}
-	double accel_magnitude = sqrt(accel_mean[0] * accel_mean[0] +
+	float accel_magnitude = sqrtf(accel_mean[0] * accel_mean[0] +
 				      accel_mean[1] * accel_mean[1] +
 				      accel_mean[2] * accel_mean[2]);
 
-	if (accel_magnitude < 8.0 || accel_magnitude > 11.0) {
+	if (accel_magnitude < 8.0f || accel_magnitude > 11.0f) {
 		LOG_WRN("%s: accel magnitude out of range: %10.4f (expected ~9.8)",
 			ctx->name, accel_magnitude);
 		calibration_ok = false;
 	}
 
 	for (size_t i = 0 ; i < ARRAY_SIZE(gyro_std) ; i++) {
-		if (gyro_std[i] > 0.1) {
+		if (gyro_std[i] > 0.1f) {
 			LOG_WRN("%s: gyro axis %d too noisy: std=%10.4f", ctx->name,
 				i, gyro_std[i]);
 			calibration_ok = false;
@@ -294,8 +294,8 @@ static void imu_publish(struct context *ctx)
 
 static inline bool calibration_requested(struct context *ctx)
 {
-	bool calibration_requested = ctx->status.mode == synapse_pb_Status_Mode_MODE_CALIBRATION &&
-				     ctx->last_mode != synapse_pb_Status_Mode_MODE_CALIBRATION;
+	bool calibration_requested = ctx->status.mode == SYNAPSE_TOPIC_STATUS_MODE_CALIBRATION &&
+				     ctx->last_mode != SYNAPSE_TOPIC_STATUS_MODE_CALIBRATION;
 
 	ctx->last_mode = ctx->status.mode;
 
@@ -433,7 +433,7 @@ static struct context imu_stream_context_##i = {						   \
 		.id = (i),									   \
 	},											   \
 	.sub_status = {},									   \
-	.status = synapse_pb_Status_init_default,						   \
+	.status = {},						   \
 	.running = false,									   \
 	.calibration = {									   \
 		.state = SENSE_IMU_STREAM_UNCALIBRATED,						   \

@@ -27,7 +27,7 @@ LOG_MODULE_REGISTER(sense_imu, CONFIG_ZROS_SENSE_IMU_LOG_LEVEL);
 
 static K_THREAD_STACK_DEFINE(g_my_stack_area, MY_STACK_SIZE);
 
-static const double g_accel = 9.8;
+static const float g_accel = 9.8f;
 static const int g_calibration_count = 100;
 
 extern struct perf_duration control_latency;
@@ -52,14 +52,14 @@ struct context {
 	synapse_pb_Status_Mode last_mode;
 	bool calibrated;
 	const struct device *gyro_dev;
-	double gyro_raw[3];
-	double gyro_bias[3];
+	float gyro_raw[3];
+	float gyro_bias[3];
 
 	// accel
 	const struct device *accel_dev;
-	double accel_raw[3];
-	double accel_bias[3];
-	double accel_scale;
+	float accel_raw[3];
+	float accel_bias[3];
+	float accel_scale;
 };
 
 static struct context g_ctx = {
@@ -174,7 +174,7 @@ void imu_read(struct context *ctx)
 		sensor_sample_fetch(ctx->accel_dev);
 		sensor_channel_get(ctx->accel_dev, SENSOR_CHAN_ACCEL_XYZ, accel_value);
 		for (int j = 0; j < 3; j++) {
-			ctx->accel_raw[j] = accel_value[j].val1 + accel_value[j].val2 * 1e-6;
+			ctx->accel_raw[j] = accel_value[j].val1 + accel_value[j].val2 * 1e-6f;
 
 			if (ctx->accel_raw[j] > 15 * g_accel || ctx->accel_raw[j] < -15 * g_accel) {
 				LOG_ERR("accel saturating: %d: %10.4f", j, ctx->accel_raw[j]);
@@ -191,7 +191,7 @@ void imu_read(struct context *ctx)
 		}
 		sensor_channel_get(ctx->gyro_dev, SENSOR_CHAN_GYRO_XYZ, gyro_value);
 		for (int j = 0; j < 3; j++) {
-			ctx->gyro_raw[j] = gyro_value[j].val1 + gyro_value[j].val2 * 1e-6;
+			ctx->gyro_raw[j] = gyro_value[j].val1 + gyro_value[j].val2 * 1e-6f;
 
 			if (ctx->gyro_raw[j] > 34 || ctx->gyro_raw[j] < -34) {
 				LOG_ERR("gyro saturating: %d: %10.4f", j, ctx->gyro_raw[j]);
@@ -204,14 +204,14 @@ void imu_read(struct context *ctx)
 void imu_calibrate(struct context *ctx)
 {
 	// data
-	double accel_samples[g_calibration_count][3];
-	double gyro_samples[g_calibration_count][3];
+	float accel_samples[g_calibration_count][3];
+	float gyro_samples[g_calibration_count][3];
 
 	// mean and std
-	double accel_mean[3];
-	double gyro_mean[3];
-	double accel_std[3];
-	double gyro_std[3];
+	float accel_mean[3];
+	float gyro_mean[3];
+	float accel_std[3];
+	float gyro_std[3];
 
 	// repeat until calibrated
 	while (true) {
@@ -257,34 +257,34 @@ void imu_calibrate(struct context *ctx)
 		// find std deviation
 		for (int i = 0; i < g_calibration_count; i++) {
 			for (int k = 0; k < 3; k++) {
-				double e = accel_samples[i][k] - accel_mean[k];
+				float e = accel_samples[i][k] - accel_mean[k];
 				accel_std[k] += e * e;
 			}
 
 			// get gyro data
 			for (int k = 0; k < 3; k++) {
-				double e = gyro_samples[i][k] - gyro_mean[k];
+				float e = gyro_samples[i][k] - gyro_mean[k];
 				gyro_std[k] += e * e;
 			}
 		}
 
 		for (int k = 0; k < 3; k++) {
-			accel_std[k] = sqrt(accel_std[k] / g_calibration_count);
+			accel_std[k] = sqrtf(accel_std[k] / g_calibration_count);
 		}
 
 		for (int k = 0; k < 3; k++) {
-			gyro_std[k] = sqrt(gyro_std[k] / g_calibration_count);
+			gyro_std[k] = sqrtf(gyro_std[k] / g_calibration_count);
 		}
 
 		// check if calibration acceptable
 		bool calibration_ok = true;
 
 		// Check if acceleration magnitude is reasonable (should be close to 9.8 m/s²)
-		double accel_magnitude =
-			sqrt(accel_mean[0] * accel_mean[0] + accel_mean[1] * accel_mean[1] +
-			     accel_mean[2] * accel_mean[2]);
+		float accel_magnitude =
+			sqrtf(accel_mean[0] * accel_mean[0] + accel_mean[1] * accel_mean[1] +
+			      accel_mean[2] * accel_mean[2]);
 
-		if (accel_magnitude < 8.0 || accel_magnitude > 11.0) {
+		if (accel_magnitude < 8.0f || accel_magnitude > 11.0f) {
 			LOG_WRN("accel magnitude out of range: %10.4f (expected ~9.8)",
 				accel_magnitude);
 			calibration_ok = false;
@@ -292,7 +292,7 @@ void imu_calibrate(struct context *ctx)
 
 		// Check if gyro readings are stable (low std deviation)
 		for (int k = 0; k < 3; k++) {
-			if (gyro_std[k] > 0.1) { // 0.1 rad/s threshold
+			if (gyro_std[k] > 0.1f) { // 0.1 rad/s threshold
 				LOG_WRN("gyro axis %d too noisy: std=%10.4f", k, gyro_std[k]);
 				calibration_ok = false;
 			}
@@ -310,8 +310,8 @@ void imu_calibrate(struct context *ctx)
 	ctx->accel_bias[0] = accel_mean[0];
 	ctx->accel_bias[1] = accel_mean[1];
 	ctx->accel_bias[2] = 0;
-	ctx->accel_scale = sqrt(accel_mean[0] * accel_mean[0] + accel_mean[1] * accel_mean[1] +
-				accel_mean[2] * accel_mean[2]) /
+	ctx->accel_scale = sqrtf(accel_mean[0] * accel_mean[0] + accel_mean[1] * accel_mean[1] +
+				 accel_mean[2] * accel_mean[2]) /
 			   g_accel;
 	LOG_INF("accel");
 	LOG_INF("mean: %10.4f %10.4f %10.4f", accel_mean[0], accel_mean[1], accel_mean[2]);

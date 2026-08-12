@@ -42,7 +42,7 @@ struct context {
 	struct zros_pub pub;
 	struct zros_topic *pub_topic;
 	bool running;
-	synapse_pb_ArgusResults data;
+	synapse_topic_ArgusResults_t data;
 	struct {
 		struct rtio *ctx;
 		struct rtio_iodev *iodev;
@@ -131,7 +131,7 @@ static inline void fill_pixel_data(struct context *ctx, argus_results_t *payload
 
 static void argus_publish(struct context *ctx, argus_results_t *payload)
 {
-	stamp_msg(&ctx->data.stamp, k_uptime_ticks());
+	ctx->data.timestamp_ns = k_ticks_to_ns_floor64(k_uptime_ticks());
 
 	ctx->data.status = payload->Status;
 	fill_bin_data(ctx, payload);
@@ -227,8 +227,8 @@ static struct context dist_stream_context_##i = {						   \
 	.pub_topic = &topic_argus,								   \
 	.running = false,									   \
 	.data = {										   \
-		.has_stamp = true,								   \
-		.stamp = synapse_pb_Timestamp_init_default,					   \
+								   \
+					   \
 		.has_bin = true,								   \
 	},											   \
 	.stream = {										   \

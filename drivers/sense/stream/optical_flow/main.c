@@ -42,7 +42,7 @@ struct context {
 	struct zros_pub pub;
 	struct zros_topic *pub_topic;
 	bool running;
-	synapse_pb_PixartPAA3905 data;
+	synapse_topic_PixartPaa3905_t data;
 	struct {
 		struct rtio *ctx;
 		struct rtio_iodev *iodev;
@@ -76,7 +76,7 @@ static inline const struct sensor_three_axis_ref *get_axis_ref(struct rtio_iodev
 static void optical_flow_publish(struct context *ctx, struct paa3905_encoded_data *edata,
 				 struct sensor_three_axis_data *data)
 {
-	stamp_msg(&ctx->data.stamp, k_uptime_ticks());
+	ctx->data.timestamp_ns = k_ticks_to_ns_floor64(k_uptime_ticks());
 	ctx->data.motion = edata->motion > 0;
 	ctx->data.mode = REG_OBSERVATION_MODE(edata->observation);
 	ctx->data.delta_x = data->readings[0].x;
@@ -173,8 +173,8 @@ static struct context flow_stream_context_##i = {						   \
 	.pub_topic = &topic_optical_flow_raw,							   \
 	.running = false,									   \
 	.data = {										   \
-		.has_stamp = true,								   \
-		.stamp = synapse_pb_Timestamp_init_default,					   \
+								   \
+					   \
 	},											   \
 	.stream = {										   \
 		.ctx = &flow_stream_ctx_##i,							   \

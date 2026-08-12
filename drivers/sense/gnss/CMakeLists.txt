@@ -7,5 +7,3 @@ zephyr_include_directories()
 zephyr_library_sources(
 	main.c
 )
-
-add_dependencies(zros_sense_gnss synapse_pb)
