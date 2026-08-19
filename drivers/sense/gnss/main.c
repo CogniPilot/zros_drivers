@@ -111,14 +111,16 @@ static void gnss_data_cb(const struct device *dev, const struct gnss_data *data)
 	fix->altitude_msl_mm = data->nav_data.altitude;
 	fix->altitude_ellipsoid_mm = data->nav_data.altitude + data->info.geoid_separation;
 
-	/*
-	 * The Zephyr GNSS API exposes no accuracy estimates, so the accuracy
-	 * fields report their saturated maximum (worst case) rather than an
-	 * unfounded zero that would claim a precise fix.
-	 */
-	fix->horizontal_accuracy_mm = UINT16_MAX;
-	fix->vertical_accuracy_mm = UINT16_MAX;
-	fix->velocity_accuracy_mm_s = UINT16_MAX;
+	if (data->info.accuracy_valid) {
+		fix->horizontal_accuracy_mm = sat_u16(data->info.horizontal_accuracy_mm);
+		fix->vertical_accuracy_mm = sat_u16(data->info.vertical_accuracy_mm);
+		fix->velocity_accuracy_mm_s = sat_u16(data->info.speed_accuracy_mm_s);
+	} else {
+		/* Unknown accuracy is the saturated worst case, never false precision. */
+		fix->horizontal_accuracy_mm = UINT16_MAX;
+		fix->vertical_accuracy_mm = UINT16_MAX;
+		fix->velocity_accuracy_mm_s = UINT16_MAX;
+	}
 	fix->yaw_accuracy_cdeg = UINT16_MAX;
 
 	/* hdop carries the only DOP the driver reports (PDOP), in 1/1000; wire is 1/100. */
