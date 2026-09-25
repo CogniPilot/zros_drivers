@@ -163,6 +163,16 @@ static int start(struct context *ctx)
 	return 0;
 }
 
+static inline const struct sensor_three_axis_ref *get_axis_ref(const struct device *dev)
+{
+	const struct sensor_three_axis_ref *axis_ref;
+
+	if (sensor_three_axis_ref_get(dev, &axis_ref) < 0) {
+		return NULL;
+	}
+	return axis_ref;
+}
+
 void imu_read(struct context *ctx)
 {
 	// default all data to zero
@@ -171,11 +181,18 @@ void imu_read(struct context *ctx)
 
 	// get accel if device present
 	if (ctx->accel_dev != NULL) {
+		const struct sensor_three_axis_ref *axis_ref = get_axis_ref(ctx->accel_dev);
+
 		sensor_sample_fetch(ctx->accel_dev);
 		sensor_channel_get(ctx->accel_dev, SENSOR_CHAN_ACCEL_XYZ, accel_value);
 		for (int j = 0; j < 3; j++) {
-			ctx->accel_raw[j] = accel_value[j].val1 + accel_value[j].val2 * 1e-6;
+			ctx->accel_raw[j] = sensor_value_to_double(&accel_value[j]);
+		}
+		if (axis_ref) {
+			sensor_three_axis_ref_align_fp(axis_ref, ctx->accel_raw);
+		}
 
+		for (int j = 0; j < 3; j++) {
 			if (ctx->accel_raw[j] > 15 * g_accel || ctx->accel_raw[j] < -15 * g_accel) {
 				LOG_ERR("accel saturating: %d: %10.4f", j, ctx->accel_raw[j]);
 				continue;
@@ -185,14 +202,22 @@ void imu_read(struct context *ctx)
 
 	// get gyro if device present
 	if (ctx->gyro_dev != NULL) {
+		const struct sensor_three_axis_ref *axis_ref = get_axis_ref(ctx->gyro_dev);
+
 		// don't resample if it is the same device as accel, want same timestamp
 		if (ctx->gyro_dev != ctx->accel_dev) {
 			sensor_sample_fetch(ctx->gyro_dev);
 		}
 		sensor_channel_get(ctx->gyro_dev, SENSOR_CHAN_GYRO_XYZ, gyro_value);
 		for (int j = 0; j < 3; j++) {
-			ctx->gyro_raw[j] = gyro_value[j].val1 + gyro_value[j].val2 * 1e-6;
+			// ctx->gyro_raw[j] = gyro_value[j].val1 + gyro_value[j].val2 * 1e-6;
+			ctx->gyro_raw[j] = sensor_value_to_double(&gyro_value[j]);
+		}
+		if (axis_ref) {
+			sensor_three_axis_ref_align_fp(axis_ref, ctx->gyro_raw);
+		}
 
+		for (int j = 0; j < 3; j++) {
 			if (ctx->gyro_raw[j] > 34 || ctx->gyro_raw[j] < -34) {
 				LOG_ERR("gyro saturating: %d: %10.4f", j, ctx->gyro_raw[j]);
 				continue;
