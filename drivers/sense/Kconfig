@@ -12,6 +12,7 @@ if ZROS_SENSE
 
 rsource "gnss/Kconfig"
 rsource "rtcm3_sub/Kconfig"
+rsource "uwb/Kconfig"
 
 rsource "stream/Kconfig"
 
