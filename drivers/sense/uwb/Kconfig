@@ -1,0 +1,111 @@
+# Copyright 2026 NXP
+# SPDX-License-Identifier: Apache-2.0
+
+config ZROS_SENSE_UWB
+	bool "ZROS UWB (FiRa two-way ranging) driver"
+	depends on UWB
+	help
+	  Runs a FiRa DS-TWR unicast ranging session on the UWB subsystem
+	  (zephyr,uwb-uci, e.g. NXP SR250) and publishes every ranging
+	  measurement from SESSION_INFO_NTF on the ZROS topic "uwb"
+	  (topic_uwb, synapse_topic_UwbRanging_t). The topic and its
+	  payload struct are provided by the application's synapse topic
+	  list (<synapse_topic_list.h>).
+
+if ZROS_SENSE_UWB
+
+choice ZROS_SENSE_UWB_ROLE
+	prompt "UWB session role"
+	default ZROS_SENSE_UWB_ROLE_CONTROLLER
+
+config ZROS_SENSE_UWB_ROLE_CONTROLLER
+	bool "Controller / initiator"
+
+config ZROS_SENSE_UWB_ROLE_CONTROLEE
+	bool "Controlee / responder"
+
+endchoice
+
+config ZROS_SENSE_UWB_SESSION_ID
+	hex "FiRa session id"
+	default 0x11223344
+	help
+	  Must match on both ends. Default matches samples/uwb/ranging_*.
+
+config ZROS_SENSE_UWB_DEVICE_MAC
+	hex "Own short (2-byte) MAC address"
+	range 0x0 0xffff
+	default 0x1122 if ZROS_SENSE_UWB_ROLE_CONTROLLER
+	default 0x2211
+	help
+	  Sent little-endian. Defaults match samples/uwb/ranging_controller
+	  ({0x22, 0x11}) and samples/uwb/ranging_controlee ({0x11, 0x22}).
+
+config ZROS_SENSE_UWB_DEST_MAC
+	hex "Peer short (2-byte) MAC address"
+	range 0x0 0xffff
+	default 0x2211 if ZROS_SENSE_UWB_ROLE_CONTROLLER
+	default 0x1122
+
+config ZROS_SENSE_UWB_RANGING_INTERVAL_MS
+	int "Ranging interval (RANGING_DURATION) in ms"
+	range 0 10000
+	default 200
+	help
+	  FiRa RANGING_DURATION. 200 ms (5 Hz) is the UWBS default; 0 keeps
+	  the UWBS default without sending the parameter. Must match on both
+	  ends.
+
+config ZROS_SENSE_UWB_AOA
+	bool "Request AoA results"
+	help
+	  Enables angle-of-arrival on the session, as the NXP UWB IoT
+	  middleware AoA demos do:
+	  AOA_RESULT_REQ=1, RESULT_REPORT_CONFIG=0x0F (FiRa) and the NXP
+	  vendor app configs ANTENNAE_CONFIGURATION_RX (AoA mode, RX
+	  antenna pair) + ENABLE_FOM=1 (SESSION_SET_VENDOR_APP_CONFIG).
+	  Needs a UWBS/antenna module with an RX antenna pair.
+
+if ZROS_SENSE_UWB_AOA
+config ZROS_SENSE_UWB_AOA_3D
+	bool "3D AoA (azimuth + elevation, two RX pairs)"
+	help
+	  n = 2D azimuth on one RX pair (middleware ANT_ID_AOA_2D_AZIMUTH,
+	  the frdm_rw612 board default). y = 3D on two RX pairs
+	  (ANT_ID_AOA_3D_AoA).
+config ZROS_SENSE_UWB_AOA_RX_PAIR_H
+	int "RX antenna pair id (azimuth)"
+	range 1 255
+	default 1
+	help
+	  Antenna-pair id as defined by the UWBS antenna definitions
+	  (CORE_SET_CONFIG at init). Middleware default: 1.
+config ZROS_SENSE_UWB_AOA_RX_PAIR_V
+	int "RX antenna pair id (elevation)"
+	range 1 255
+	default 2
+	depends on ZROS_SENSE_UWB_AOA_3D
+endif # ZROS_SENSE_UWB_AOA
+
+config ZROS_SENSE_UWB_PREAMBLE_CODE_INDEX
+	int "Preamble code index"
+	range 9 32
+	default 10
+
+config ZROS_SENSE_UWB_RESTART_DELAY_MS
+	int "Delay before re-creating a lost/failed session (ms)"
+	default 1000
+
+config ZROS_SENSE_UWB_THREAD_STACK_SIZE
+	int "Session thread stack size"
+	default 4800
+
+config ZROS_SENSE_UWB_THREAD_PRIORITY
+	int "Session thread priority"
+	default 6
+
+module = ZROS_SENSE_UWB
+module-str = sense_uwb
+source "subsys/logging/Kconfig.template.log_config"
+
+endif
