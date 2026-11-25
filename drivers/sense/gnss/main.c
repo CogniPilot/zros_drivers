@@ -82,11 +82,6 @@ static void gnss_data_cb(const struct device *dev, const struct gnss_data *data)
 
 	g_ctx.isAlive = true;
 
-	if (data->info.fix_status == GNSS_FIX_STATUS_NO_FIX) {
-		LOG_WRN("gnss update without fix. SV tracked: %d", data->info.satellites_cnt);
-		return;
-	}
-
 	synapse_topic_GnssFix_t *fix = &g_ctx.data;
 
 	memset(fix, 0, sizeof(*fix));
@@ -102,6 +97,31 @@ static void gnss_data_cb(const struct device *dev, const struct gnss_data *data)
 	fix->time_status = synapse_time_status_resolve(&g_ctx.time_ever_synced, &time_offset_ns);
 	fix->timestamp_ns =
 		(uint64_t)((int64_t)k_ticks_to_ns_floor64(k_uptime_ticks()) + time_offset_ns);
+
+	fix->satellites_used = (data->info.satellites_cnt > UINT8_MAX)
+				       ? UINT8_MAX
+				       : (uint8_t)data->info.satellites_cnt;
+
+	/* Single GNSS instance on this node. */
+	fix->id = 0U;
+
+	if (data->info.fix_status == GNSS_FIX_STATUS_NO_FIX) {
+		/*
+		 * Still publish so consumers see the receiver is alive. Position,
+		 * velocity, DOP and flags stay zeroed; fix_type is NO_FIX. Accuracy
+		 * fields are saturated to the worst case so a zeroed message never
+		 * advertises false precision.
+		 */
+		fix->fix_type = SYNAPSE_TYPES_GNSS_FIX_TYPE_NO_FIX;
+		fix->horizontal_accuracy_mm = UINT16_MAX;
+		fix->vertical_accuracy_mm = UINT16_MAX;
+		fix->velocity_accuracy_mm_s = UINT16_MAX;
+		fix->yaw_accuracy_cdeg = UINT16_MAX;
+
+		zros_pub_update(&g_ctx.pub);
+		LOG_DBG("gnss update without fix. SV tracked: %d", data->info.satellites_cnt);
+		return;
+	}
 
 	/* nav_data angles are nanodegrees; the wire uses degrees * 1e7 (nanodeg / 100). */
 	fix->latitude_deg_e7 = (int32_t)(data->nav_data.latitude / 100);
@@ -131,9 +151,6 @@ static void gnss_data_cb(const struct device *dev, const struct gnss_data *data)
 	fix->course_over_ground_cdeg = sat_u16(data->nav_data.bearing / 10);
 
 	fix->fix_type = gnss_fix_type(data->info.fix_quality);
-	fix->satellites_used = (data->info.satellites_cnt > UINT8_MAX)
-				       ? UINT8_MAX
-				       : (uint8_t)data->info.satellites_cnt;
 
 	/*
 	 * Only course over ground is available. Vehicle yaw and vertical velocity
@@ -142,9 +159,6 @@ static void gnss_data_cb(const struct device *dev, const struct gnss_data *data)
 	 * not populated here, so TIME_VALID stays clear as well.
 	 */
 	fix->flags = SYNAPSE_TOPIC_GNSS_FIX_FLAG_COURSE_VALID;
-
-	/* Single GNSS instance on this node. */
-	fix->id = 0U;
 
 	zros_pub_update(&g_ctx.pub);
 	LOG_DBG("lat %d lon %d msl %d mm", fix->latitude_deg_e7, fix->longitude_deg_e7,
